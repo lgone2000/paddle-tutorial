@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -51,6 +52,12 @@ add_arg('enable_ce', bool, False, "If set True, enable continuous evaluation job
 
 model_list = [m for m in dir(models) if "__" not in m]
 
+#optimizer:分类优化器，一般选择Momentum(momentum=0.9)优化器， 学习率一般采用分段下降的调整（每次调整到原来1/10)，或者cosine 下降调整策略，
+#learning-rate:基础学习率 如果从随机初始化训练开始，设置为0.1，如果finetune则会降低到0.01~0.001（前面加上warm-up)
+#weightdecay:正则化 缺省一般用1e-4, 很大网络比如se-resnext152 可以适当放大到5.0e-4，小网络比如mobilenet训练小数据集 可以缩小到1e-5
+#epochnum:训练轮数 目前统一到200， 会比90 高1%， finetune可以降低到10~20 epoch
+#Momentum优化器文档  http://paddlepaddle.org/documentation/docs/zh/1.3/api_cn/optimizer_cn.html#permalink-15-momentum
+
 def optimizer_setting(params):
     ls = params["learning_strategy"]
     assert ls["name"] == "piecewise_decay", \
@@ -60,6 +67,7 @@ def optimizer_setting(params):
     bd = [int(e) for e in ls["lr_steps"].split(',')]
     base_lr = params["lr"]
     lr = [base_lr * (0.1 ** i) for i in range(len(bd) + 1)]
+    #相对于SGD ，使用Momentum 加快收敛速度而不影响收敛效果。如果用Adam，或者RMScrop收敛可以更快，但在imagenet上收敛有损失
     optimizer = fluid.optimizer.Momentum(
         learning_rate=fluid.layers.piecewise_decay(
             boundaries=bd, values=lr),
@@ -67,7 +75,8 @@ def optimizer_setting(params):
         regularization=fluid.regularizer.L2Decay(1e-4))
     return optimizer
 
-
+#基于deepid思路的，基于分类损失进行特征学习，对比 SoftmaxLoss, ArcMarginLoss。
+#原始网络+降维的fc 做为特征输出层， embedding_size 控制特征层维度。
 def net_config(image, label, model, args, is_train):
     assert args.model in model_list, "{} is not in lists: {}".format(
         args.model, model_list)
@@ -93,9 +102,13 @@ def net_config(image, label, model, args, is_train):
     acc_top5 = fluid.layers.accuracy(input=logit, label=label, k=5)
     return avg_cost, acc_top1, acc_top5, out
 
+#标准的feed数据方式，通过executer.run 的feed参数同步传入数据， 并获得fetch变量的值。这样会导致 feed数据和训练是串行的两步，
+#采用py_reader可以使得feed数据和训练变成异步操作，加速训练过程
 def build_program(is_train, main_prog, startup_prog, args):
     image_shape = [int(m) for m in args.image_shape.split(",")]
     model = models.__dict__[args.model]()
+    
+    #在 指定的main_prog 和start_prog 下组网（而不是用缺省的那个）
     with fluid.program_guard(main_prog, startup_prog):
         if is_train:
             queue_capacity = 64
@@ -110,13 +123,16 @@ def build_program(is_train, main_prog, startup_prog, args):
             image = fluid.layers.data(name='image', shape=image_shape, dtype='float32')
             label = fluid.layers.data(name='label', shape=[1], dtype='int64')
 
+        #fluid.unique_name.guard()函数是为了初始化参数名称的时候统一名称，同样名字的参数在不同网络中属于一个参数，则在使用这个网络的时候保证用的同一套参数，而且这个函数的传参可以规定网络中所有参数开头的名称
         with fluid.unique_name.guard():
+            #构建网络结构
             avg_cost, acc_top1, acc_top5, out = net_config(image, label, model, args, is_train)
             if is_train:
                 params = model.params
                 params["lr"] = args.lr
                 params["learning_strategy"]["lr_steps"] = args.lr_steps
                 params["learning_strategy"]["name"] = args.lr_strategy
+                #根据配置创建优化器
                 optimizer = optimizer_setting(params)
                 optimizer.minimize(avg_cost)
                 global_lr = optimizer._global_learning_rate()
@@ -143,6 +159,7 @@ def train_async(args):
     train_prog = fluid.Program()
     tmp_prog = fluid.Program()
 
+    #测试使用，固定随机参数种子
     if args.enable_ce:
         assert args.model == "ResNet50"
         assert args.loss_name == "arcmargin"
@@ -166,19 +183,23 @@ def train_async(args):
     train_fetch_list = [global_lr.name, train_cost.name, train_acc1.name, train_acc5.name]
     test_fetch_list = [test_feas.name]
 
+    #打开内存优化，可以节省显存使用
     if args.with_mem_opt:
         fluid.memory_optimize(train_prog, skip_opt_set=set(train_fetch_list))
 
     place = fluid.CUDAPlace(0) if args.use_gpu else fluid.CPUPlace()
     exe = fluid.Executor(place)
 
+    #初始化变量
     exe.run(startup_prog)
 
     logging.debug('after run startup program')
 
+    #从断点中恢复
     if checkpoint is not None:
         fluid.io.load_persistables(exe, checkpoint, main_program=train_prog)
 
+    #加载预训练模型的参数到网络。如果使用预训练模型，最后一层fc需要改一下名字，或者删掉预训练模型的fc对应的权值文件
     if pretrained_model:
 
         def if_exist(var):
@@ -187,27 +208,34 @@ def train_async(args):
         fluid.io.load_vars(
             exe, pretrained_model, main_program=train_prog, predicate=if_exist)
 
+    #得到机器gpu卡数。
     devicenum = get_gpu_num()
     assert (args.train_batch_size % devicenum) == 0
+    
+    #注意： 使用py_reader 的输入的batch大小，是单卡的batch大小，所以要除一下
     train_batch_size = args.train_batch_size // devicenum
     test_batch_size = args.test_batch_size
     
+    #创建新的train_reader 将输入的reader读入的数据组成batch 。另外将train_reader 连接到 pyreader,由pyreader创建的线程主动读取，不在主线程调用。
     train_reader = paddle.batch(reader.train(args), batch_size=train_batch_size, drop_last=True)
     test_reader = paddle.batch(reader.test(args), batch_size=test_batch_size, drop_last=False)
     test_feeder = fluid.DataFeeder(place=place, feed_list=[image, label])
     train_py_reader.decorate_paddle_reader(train_reader)
 
+    #使用ParallelExecutor 实现多卡训练
     train_exe = fluid.ParallelExecutor(
         main_program=train_prog,
         use_cuda=args.use_gpu,
         loss_name=train_cost.name)
 
     totalruntime = 0
+    #启动pyreader的读取线程
     train_py_reader.start()
     iter_no = 0
     train_info = [0, 0, 0, 0]
     while iter_no <= args.total_iter_num:
         t1 = time.time()
+        #注意对于pyreader异步读取，不需要传入feed 参数了
         lr, loss, acc1, acc5 = train_exe.run(fetch_list=train_fetch_list)
         t2 = time.time()
         period = t2 - t1
@@ -216,6 +244,7 @@ def train_async(args):
         train_info[1] += np.mean(np.array(acc1))
         train_info[2] += np.mean(np.array(acc5))
         train_info[3] += 1
+        #计算多个batch的平均准确率
         if iter_no % args.display_iter_step == 0:
             avgruntime = totalruntime / args.display_iter_step
             avg_loss = train_info[0] / train_info[3]
@@ -232,6 +261,7 @@ def train_async(args):
         totalruntime += period
         
         if iter_no % args.test_iter_step == 0 and iter_no != 0:
+            #保持多个batch的feature 和 label 分别到 f, l
             f, l = [], []
             for batch_id, data in enumerate(test_reader()):
                 t1 = time.time()
@@ -246,6 +276,7 @@ def train_async(args):
                     print("[%s] testbatch %d, time %2.2f sec" % \
                             (fmt_time(), batch_id, period))
 
+            #测试检索的准确率，当query和检索结果类别一致，检索正确。（这里测试数据集类别与训练数据集类别不重叠，因此网络输出的类别没有意义）
             f = np.vstack(f)
             l = np.hstack(l)
             recall = recall_topk(f, l, k=1)
@@ -258,6 +289,7 @@ def train_async(args):
                                       str(iter_no))
             if not os.path.isdir(model_path):
                 os.makedirs(model_path)
+            #保存模型， 可用于训练断点恢复
             fluid.io.save_persistables(exe, model_path, main_program=train_prog)
 
         iter_no += 1
