@@ -4,7 +4,9 @@ import cv2
 import os
 import mmap
 import random
-
+import math
+from paddle import fluid
+import time
 
 def loadimagefromstr(imagestr):
     imgdata = np.fromstring(imagestr, dtype='uint8')
@@ -118,36 +120,56 @@ def myreader_classify(datasetfile, labelfile, mode):
             img = process_image(img, mode)
             yield img, label
 
-
 def test_reader():
     import paddle
     from paddle import fluid
     train_batch_size = 10
 
     def getreader():
-        reader = myreader_classify('cifar10/cifar10_train.data',
-                                   'cifar10/cifar10_train.label', 'train')
+        reader = myreader_classify('dataset/cifar10/cifar10_train.data',
+                                   'dataset/cifar10/cifar10_train.label', 'train')
         return reader
 
     reader = paddle.batch(
         getreader, batch_size=train_batch_size, drop_last=True)
 
-    imagevar = fluid.layers.data(
-        name='image', shape=[3, 32, 32], dtype='float32')
-    labelvar = fluid.layers.data(name='label', shape=[1], dtype='int64')
-    #根据变量类型，进行自动转换
-    test_feeder = fluid.DataFeeder(
-        place=fluid.CPUPlace(), feed_list=[imagevar, labelvar])
+    
+    if 0:
+        imagevar = fluid.layers.data(
+            name='image', shape=[3, 32, 32], dtype='float32')
+        labelvar = fluid.layers.data(name='label', shape=[1], dtype='int64')
+        #根据变量类型，进行自动转换
+        test_feeder = fluid.DataFeeder(
+            place=fluid.CPUPlace(), feed_list=[imagevar, labelvar])
+        for batch in reader():
+            print 'batchsize', len(batch)
+            for data, label in batch:
+                print('datashape', data.shape, 'label', label)
 
-    for batch in reader():
-        print 'batchsize', len(batch)
-        for data, label in batch:
-            print('datashape', data.shape, 'label', label)
+            feeddata = test_feeder.feed(batch)
+            print('feeddata', feeddata)
+            break
 
-        feeddata = test_feeder.feed(batch)
-        print('feeddata', feeddata)
-        break
-
+    pyreader = fluid.layers.py_reader(capacity=64,
+                                      shapes=[(-1,3,33,33), (-1,1)],
+                                         dtypes=['float32', 'int64'])
+    pyreader.decorate_paddle_reader(reader)
+    
+    img, label = fluid.layers.read_file(pyreader)
+    loss = fluid.layers.mean(img)
+    optimizer = fluid.optimizer.SGD(learning_rate=0.1)
+    opts = optimizer.minimize(loss)
+    
+    fluid.Executor(fluid.CUDAPlace(0)).run(fluid.default_startup_program())
+    exe = fluid.ParallelExecutor(use_cuda=True, loss_name=loss.name)
+    pyreader.start()
+    for i in range(10):
+        try:
+            outputlist = exe.run(fetch_list=[loss.name])
+            print outputlist
+        except fluid.core.EOFException as e:
+            reader.reset()
+        
 
 if __name__ == '__main__':
     import sys

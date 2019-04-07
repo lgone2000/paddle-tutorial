@@ -12,7 +12,7 @@ from cifar_reader import cifareader
 #1.2 测试读取10个图片和label 并保存
 def test_reader(readnum):
     #测试读取程序，验证
-    traindataset = cifareader('cifar-10-python.tar.gz', 'data_batch')
+    traindataset = cifareader('dataset/cifar-10-python.tar.gz', 'data_batch')
     #testdataset = reader('cifar-10-python.tar.gz', 'test_batch')
     readnum = int(readnum)
     for i, data in enumerate(traindataset):
@@ -52,7 +52,7 @@ def print_variable():
     for var in variables:
         print 'var', var.name, var.persistable
 
-    all_params = program.global_block().all_parameters()
+    all_params = fluid.default_main_program().global_block().all_parameters()
     for var in all_params:
         print 'param', var.name, var.persistable
 
@@ -110,7 +110,7 @@ def preprocess(image):
 #1.7 batch reader, 将输入转换为batch
 def createbatchreader(subname, batchsize):
     images, labels = [], []
-    traindataset = cifareader('cifar-10-python.tar.gz', subname, True)
+    traindataset = cifareader('dataset/cifar-10-python.tar.gz', subname, True)
     while True:
         for i in range(batchsize):
             image, label = traindataset.next()
@@ -223,7 +223,7 @@ def test_predict():
     print 'finish load model', 'feedname:', feed_names, 'fetch_list_name:', fetch_list_name
 
     print '==== inference'
-    imagefilename = 'temp/0.png'
+    imagefilename = 'testdata/predict_cifar.png'
     image = cv2.imread(imagefilename, 1)
     inputdata = preprocess(image)
     outputlist = exe.run(

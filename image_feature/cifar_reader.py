@@ -31,7 +31,7 @@ def cifareader(filename, sub_name, cycle=False):
     '''
     #读入全部数据后，进行迭代
     print 'loading cifer10 ==='
-    loadcifar10(filename, sub_name)
+    alldatas = loadcifar10(filename, sub_name)
     print 'finish loading cifer10'
     index = list(range(len(alldatas)))
     while True:

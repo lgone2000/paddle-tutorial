@@ -13,18 +13,18 @@ import resnet18
 
 #替换老的reader
 
-train_datasetfile = 'cifar10/cifar10_train.data'
-train_labelfile = 'cifar10/cifar10_train.label'
+train_datasetfile = 'dataset/cifar10/cifar10_train.data'
+train_labelfile = 'dataset/cifar10/cifar10_train.label'
 
-val_datasetfile = 'cifar10/cifar10_test.data'
-val_labelfile = 'cifar10/cifar10_test.label'
+val_datasetfile = 'dataset/cifar10/cifar10_test.data'
+val_labelfile = 'dataset/cifar10/cifar10_test.label'
 
 
 def train(args):
     def train_reader():
         traindataset = myreader.myreader_classify(train_datasetfile,
                                                   train_labelfile, 'train')
-        for image, label in enumerate(traindataset):
+        for image, label in traindataset:
             yield image, label
 
     return train_reader
@@ -34,8 +34,8 @@ def val(args):
     def val_reader():
         traindataset = myreader.myreader_classify(val_datasetfile,
                                                   val_labelfile, 'val')
-        for image, label in enumerate(traindataset):
-            yield (image, label)
+        for image, label in traindataset:
+            yield image, label
 
     return val_reader
 
