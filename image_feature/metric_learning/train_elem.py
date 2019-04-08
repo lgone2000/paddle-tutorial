@@ -216,6 +216,8 @@ def train_async(args):
     train_batch_size = args.train_batch_size // devicenum
     test_batch_size = args.test_batch_size
     
+    logging.debug('device number is %d, batch on each card:%d', devicenum, train_batch_size)
+    
     #创建新的train_reader 将输入的reader读入的数据组成batch 。另外将train_reader 连接到 pyreader,由pyreader创建的线程主动读取，不在主线程调用。
     train_reader = paddle.batch(reader.train(args), batch_size=train_batch_size, drop_last=True)
     test_reader = paddle.batch(reader.test(args), batch_size=test_batch_size, drop_last=False)
@@ -313,6 +315,7 @@ def initlogging():
         datefmt='%a, %d %b %Y %H:%M:%S')
 
 def main():
+    initlogging()
     args = parser.parse_args()
     print_arguments(args)
     train_async(args)

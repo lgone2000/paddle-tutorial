@@ -65,21 +65,21 @@ def trainmain():
     sys.argv = [
         'train.py',
         "--model=ResNet18",
-        "--train_batch_size=100",
-        "--test_batch_size=50",
+        "--train_batch_size=128",
+        "--test_batch_size=64",
         "--embedding_size=256",
         "--class_dim=10",
         "--image_shape=3,32,32",
         "--lr=0.1",
         "--lr_strategy=piecewise_decay",
-        "--lr_steps=6000000,9000000,12000000",
+        "--lr_steps=6000,12000,18000",
+        #"--lr_epoch=30, 60, 90",
         #"--l2_decay=5e-4",
         "--display_iter_step=100",
-        "--total_iter_num=16000000",
-        "--test_iter_step=100000",
-        "--save_iter_step=1000000",
-        "--loss_name=softmax",
-        #120,180, 240
+        "--total_iter_num=20000",
+        "--test_iter_step=500",
+        "--save_iter_step=2000",
+        "--loss_name=softmax",        
     ]
     trainmodule.main()
 

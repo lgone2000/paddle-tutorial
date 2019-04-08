@@ -87,7 +87,8 @@ def process_image(img, mode):
     else:
         preprocess_ops = [
             [convert2rgb],
-            [swapaxis][normalize, mean, std],
+            [swapaxis],
+            [normalize, mean, std],
         ]
     return preprocess(img, preprocess_ops)
 
@@ -111,6 +112,7 @@ def loadlabeldata(labelfile):
 def myreader_classify(datasetfile, labelfile, mode):
     allimagedata = ImageData(datasetfile)
     labeldatas = loadlabeldata(labelfile)
+            
     while True:
         random.shuffle(labeldatas)
         for key, label in labeldatas:
@@ -119,6 +121,10 @@ def myreader_classify(datasetfile, labelfile, mode):
             assert (img is not None)
             img = process_image(img, mode)
             yield img, label
+        #如果是训练就循环读取，测试只读取一遍
+        if mode != 'train': 
+            break
+    
 
 def test_reader():
     import paddle
