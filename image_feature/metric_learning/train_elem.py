@@ -22,9 +22,15 @@ from losses import ArcMarginLoss
 from utility import add_arguments, print_arguments
 from utility import fmt_time, recall_topk, get_gpu_num
 
+from paddle.fluid.layers.learning_rate_scheduler import _decay_step_counter
+from paddle.fluid.initializer import init_on_cpu
+import paddle.fluid.layers.ops as ops
+from paddle.fluid.layers import control_flow
+
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
 # yapf: disable
+add_arg('input_dtype', str, 'float32', "input blob's dtype uint8|float32")
 add_arg('model', str, "ResNet50", "Set the network to use.")
 add_arg('embedding_size', int, 0, "Embedding size.")
 add_arg('train_batch_size', int, 256, "Minibatch size.")
@@ -34,6 +40,8 @@ add_arg('class_dim', int, 11318 , "Class number.")
 add_arg('lr', float, 0.01, "set learning rate.")
 add_arg('lr_strategy', str, "piecewise_decay",	"Set the learning rate decay strategy.")
 add_arg('lr_steps', str, "15000,25000", "step of lr")
+
+add_arg('warmup_iter_num', int, 0, "warmup_iter_num")
 add_arg('total_iter_num', int, 30000, "total_iter_num")
 add_arg('display_iter_step', int, 10, "display_iter_step.")
 add_arg('test_iter_step', int, 1000, "test_iter_step.")
@@ -58,22 +66,84 @@ model_list = [m for m in dir(models) if "__" not in m]
 #epochnum:训练轮数 目前统一到200， 会比90 高1%， finetune可以降低到10~20 epoch
 #Momentum优化器文档  http://paddlepaddle.org/documentation/docs/zh/1.3/api_cn/optimizer_cn.html#permalink-15-momentum
 
-def optimizer_setting(params):
-    ls = params["learning_strategy"]
-    assert ls["name"] == "piecewise_decay", \
-           "learning rate strategy must be {}, \
-           but got {}".format("piecewise_decay", lr["name"])
+def cosine_decay_v2(learning_rate, totalsteps):
+    """Applies cosine decay to the learning rate.
+    lr = 0.05 * (math.cos(global_step * (math.pi / totalsteps)) + 1)
+    decrease lr for every mini-batch.
+    """
+    global_step = _decay_step_counter()
 
-    bd = [int(e) for e in ls["lr_steps"].split(',')]
+    with init_on_cpu():
+        decayed_lr = learning_rate * \
+                     (ops.cos(global_step * (math.pi / float(totalsteps))) + 1)/2
+    return decayed_lr
+
+def cosine_decay_v2_with_warmup(learning_rate, warmupsteps, totalsteps):
+    """Applies cosine decay to the learning rate.
+    lr = 0.05 * (math.cos(epoch * (math.pi / 120)) + 1)
+    decrease lr for every mini-batch and start with warmup.
+    """
+    global_step = _decay_step_counter()
+    lr = fluid.layers.tensor.create_global_var(
+        shape=[1],
+        value=0.0,
+        dtype='float32',
+        persistable=True,
+        name="learning_rate")
+
+    with init_on_cpu():
+        with control_flow.Switch() as switch:
+            with switch.case(global_step < warmupsteps):
+                decayed_lr = learning_rate * (global_step /
+                                              float(warmupsteps))
+                fluid.layers.tensor.assign(input=decayed_lr, output=lr)
+            with switch.default():
+                decayed_lr = learning_rate * \
+                     (ops.cos((global_step - warmupsteps) * (math.pi / (totalsteps))) + 1)/2
+                fluid.layers.tensor.assign(input=decayed_lr, output=lr)
+    return lr
+
+def optimizer_setting(params, args):
+    ls = params["learning_strategy"]
+    assert ls["name"] in ["piecewise_decay", "cosine_decay", "cosine_decay_with_warmup"]
     base_lr = params["lr"]
-    lr = [base_lr * (0.1 ** i) for i in range(len(bd) + 1)]
+        
+    if ls['name'] == "piecewise_decay" :
+        bd = [int(e) for e in ls["lr_steps"].split(',')]
+        lr = [base_lr * (0.1 ** i) for i in range(len(bd) + 1)]
+        lrs = fluid.layers.piecewise_decay(boundaries=bd, values=lr)
+    elif ls['name'] == "cosine_decay" :
+        lrs = cosine_decay_v2(base_lr, args.total_iter_num)
+    elif ls['name'] == "cosine_decay_with_warmup" :
+        lrs = cosine_decay_v2_with_warmup(base_lr, args.warmup_iter_num, args.total_iter_num)
+        
     #相对于SGD ，使用Momentum 加快收敛速度而不影响收敛效果。如果用Adam，或者RMScrop收敛可以更快，但在imagenet上收敛有损失
     optimizer = fluid.optimizer.Momentum(
-        learning_rate=fluid.layers.piecewise_decay(
-            boundaries=bd, values=lr),
+        learning_rate=lrs,
         momentum=0.9,
         regularization=fluid.regularizer.L2Decay(1e-4))
     return optimizer
+
+#在网络里面减均值除方差
+def preprocessimg(image):
+    logging.debug('cast image to float32')
+    data_ori = fluid.layers.cast(x=image, dtype='float32')
+    mean_values_numpy = np.array(reader.img_mean,np.float32).reshape(-1, 1, 1).astype(np.float32)
+    mean_values = fluid.layers.create_tensor(dtype="float32")
+    fluid.layers.assign(input=mean_values_numpy, output=mean_values)
+    mean_values.stop_gradient = True
+
+    std_values_numpy = np.array(reader.img_std,np.float32).reshape(-1, 1, 1).astype(np.float32)
+    std_values = fluid.layers.create_tensor(dtype="float32")
+    fluid.layers.assign(input=std_values_numpy, output=std_values)
+    std_values.stop_gradient = True
+
+    datasubmean = fluid.layers.elementwise_sub(data_ori, mean_values)
+    datasubmean.stop_gradient = True
+    inputdata = fluid.layers.elementwise_div(datasubmean, std_values)
+    inputdata.stop_gradient = True
+    return inputdata
+
 
 #基于deepid思路的，基于分类损失进行特征学习，对比 SoftmaxLoss, ArcMarginLoss。
 #原始网络+降维的fc 做为特征输出层， embedding_size 控制特征层维度。
@@ -81,7 +151,13 @@ def net_config(image, label, model, args, is_train):
     assert args.model in model_list, "{} is not in lists: {}".format(
         args.model, model_list)
 
-    out = model.net(input=image, embedding_size=args.embedding_size)
+    if args.input_dtype == 'uint8':
+        assert (str(image.dtype) == 'VarType.UINT8')
+        inputdata = preprocessimg(image)
+    else:
+        inputdata = image
+        
+    out = model.net(input=inputdata, embedding_size=args.embedding_size)
     if not is_train:
         return None, None, None, out
 
@@ -116,11 +192,11 @@ def build_program(is_train, main_prog, startup_prog, args):
                 capacity=queue_capacity,
                 shapes=[[-1] + image_shape, [-1, 1]],
                 lod_levels=[0, 0],
-                dtypes=["float32", "int64"],
+                dtypes=[args.input_dtype, "int64"],
                 use_double_buffer=True)
             image, label = fluid.layers.read_file(py_reader)
         else:
-            image = fluid.layers.data(name='image', shape=image_shape, dtype='float32')
+            image = fluid.layers.data(name='image', shape=image_shape, dtype=args.input_dtype)
             label = fluid.layers.data(name='label', shape=[1], dtype='int64')
 
         #fluid.unique_name.guard()函数是为了初始化参数名称的时候统一名称，同样名字的参数在不同网络中属于一个参数，则在使用这个网络的时候保证用的同一套参数，而且这个函数的传参可以规定网络中所有参数开头的名称
@@ -133,7 +209,7 @@ def build_program(is_train, main_prog, startup_prog, args):
                 params["learning_strategy"]["lr_steps"] = args.lr_steps
                 params["learning_strategy"]["name"] = args.lr_strategy
                 #根据配置创建优化器
-                optimizer = optimizer_setting(params)
+                optimizer = optimizer_setting(params, args)
                 optimizer.minimize(avg_cost)
                 global_lr = optimizer._global_learning_rate()
     """            
@@ -183,7 +259,7 @@ def train_async(args):
     train_fetch_list = [global_lr.name, train_cost.name, train_acc1.name, train_acc5.name]
     test_fetch_list = [test_feas.name]
 
-    #打开内存优化，可以节省显存使用
+    #打开内存优化，可以节省显存使用(注意，取出的变量要使用skip_opt_set设置一下，否则有可能被优化覆写)
     if args.with_mem_opt:
         fluid.memory_optimize(train_prog, skip_opt_set=set(train_fetch_list))
 
@@ -262,22 +338,23 @@ def train_async(args):
 
         totalruntime += period
         
-        if iter_no % args.test_iter_step == 0 and iter_no != 0:
+        if iter_no % args.test_iter_step == 0 and (pretrained_model or iter_no != 0):
             #保持多个batch的feature 和 label 分别到 f, l
             f, l = [], []
+            max_test_count = 100
             for batch_id, data in enumerate(test_reader()):
                 t1 = time.time()
                 [feas] = exe.run(test_prog, fetch_list = test_fetch_list, feed=test_feeder.feed(data))
                 label = np.asarray([x[1] for x in data])
                 f.append(feas)
                 l.append(label)
-
                 t2 = time.time()
                 period = t2 - t1
                 if batch_id % 20 == 0:
                     print("[%s] testbatch %d, time %2.2f sec" % \
                             (fmt_time(), batch_id, period))
-
+                if batch_id > max_test_count :
+                    break
             #测试检索的准确率，当query和检索结果类别一致，检索正确。（这里测试数据集类别与训练数据集类别不重叠，因此网络输出的类别没有意义）
             f = np.vstack(f)
             l = np.hstack(l)

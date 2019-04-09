@@ -13,11 +13,11 @@ import resnet18
 
 #替换老的reader
 
-train_datasetfile = 'dataset/cifar10/cifar10_train.data'
-train_labelfile = 'dataset/cifar10/cifar10_train.label'
+train_datasetfile = 'dataset/face_ms1m/ms1m_train.data'
+train_labelfile = 'dataset/face_ms1m/ms1m_train_80000.label'
 
-val_datasetfile = 'dataset/cifar10/cifar10_test.data'
-val_labelfile = 'dataset/cifar10/cifar10_test.label'
+val_datasetfile = 'dataset/face_ms1m/ms1m_train.data'
+val_labelfile = 'dataset/face_ms1m/ms1m_train_5164.label'
 
 
 def train(args):
@@ -32,8 +32,8 @@ def train(args):
 
 def val(args):
     def val_reader():
-        traindataset = myreader.myreader_classify(val_datasetfile,
-                                                  val_labelfile, 'val')
+        traindataset = myreader.myreader_classify(
+            val_datasetfile, val_labelfile, 'val', doshuffle=False)
         for image, label in traindataset:
             yield image, label
 
@@ -51,10 +51,7 @@ class Dataset(object):
 
 #替换训练主模块里面的reader，并增加ResNet18模型
 trainmodule.reader = Dataset(
-    train,
-    val,
-    mean=[125.307, 122.961, 113.8575],
-    std=[51.5865, 50.847, 51.255])
+    train, val, mean=[127.5, 127.5, 127.5], std=[128.0, 128.0, 128.0])
 
 
 class Models(object):
@@ -72,22 +69,25 @@ def trainmain():
         'train.py',
         "--input_dtype=uint8",
         "--model=ResNet18",
-        "--train_batch_size=128",
+        "--train_batch_size=512",
         "--test_batch_size=64",
         "--embedding_size=256",
-        "--class_dim=10",
-        "--image_shape=3,32,32",
+        "--class_dim=80000",
+        "--image_shape=3,112,112",
         "--lr=0.1",
-        "--lr_strategy=piecewise_decay",
-        "--lr_steps=6000,12000,18000",
+        #"--lr_strategy=piecewise_decay",
+        #"--lr_steps=100000, 140000, 160000",
         #"--lr_epoch=30, 60, 90",
         #"--l2_decay=5e-4",
-        "--display_iter_step=100",
-        "--total_iter_num=20000",
+        "--lr_strategy=cosine_decay_with_warmup",
+        "--warmup_iter_num=12000",
+        "--display_iter_step=10",
+        "--total_iter_num=36000",
         "--test_iter_step=500",
-        "--save_iter_step=2000",
-        "--loss_name=softmax",
-        #"--pretrained_model=cifar_pretrained"
+        "--save_iter_step=6000",
+        "--loss_name=arcmargin",
+        "--arc_scale=64",
+        "--arc_margin=0.5",
     ]
     trainmodule.main()
 

@@ -8,9 +8,10 @@ import math
 from paddle import fluid
 import time
 
-def loadimagefromstr(imagestr):
+
+def loadimagefromstr(imagestr, iscolor):
     imgdata = np.fromstring(imagestr, dtype='uint8')
-    image = cv2.imdecode(imgdata, 1)
+    image = cv2.imdecode(imgdata, iscolor)
     if image is None:
         return None
     return image
@@ -74,21 +75,19 @@ def preprocess(img, operators):
 
 
 def process_image(img, mode):
-    mean = [125.307, 122.961, 113.8575]
-    std = [51.5865, 50.847, 51.255]
 
     if mode == 'train':
         preprocess_ops = [
             [flip],
             [convert2rgb],
             [swapaxis],
-            [normalize, mean, std],
+            #[normalize, mean, std],
         ]
     else:
         preprocess_ops = [
             [convert2rgb],
             [swapaxis],
-            [normalize, mean, std],
+            #[normalize, mean, std],
         ]
     return preprocess(img, preprocess_ops)
 
@@ -103,28 +102,77 @@ def loadlabeldata(labelfile):
         labeldatas.append((key, label))
         if label not in labelset:
             labelset.add(label)
-    labels = sorted(list(labelset))
-    #保证所有标签都有样本
-    assert (len(labels) == labels[-1] + 1)
-    return labeldatas
+    return labeldatas, labelset
 
 
-def myreader_classify(datasetfile, labelfile, mode):
+def myreader_classify(datasetfile,
+                      labelfile,
+                      mode,
+                      doshuffle=True,
+                      iscolor=1,
+                      preprocessfunc=None):
     allimagedata = ImageData(datasetfile)
-    labeldatas = loadlabeldata(labelfile)
-            
+    labeldatas, labelset = loadlabeldata(labelfile)
+    if mode == 'train':
+        #保证所有标签都有样本
+        labels = sorted(list(labelset))
+        assert (len(labels) == labels[-1] + 1)
+    if preprocessfunc is None:
+        preprocessfunc = process_image
     while True:
-        random.shuffle(labeldatas)
+        if doshuffle:
+            random.shuffle(labeldatas)
         for key, label in labeldatas:
             imgdata = allimagedata.getvalue(key)
-            img = loadimagefromstr(imgdata)
+            img = loadimagefromstr(imgdata, iscolor)
             assert (img is not None)
-            img = process_image(img, mode)
+            img = preprocessfunc(img, mode)
             yield img, label
         #如果是训练就循环读取，测试只读取一遍
-        if mode != 'train': 
+        if mode != 'train':
             break
-    
+
+
+#仅用于训练
+def myreader_classify_multiprocess(datasetfile, labelfile, mode, threadnum=4):
+    import multiprocessing as mp
+    import Queue
+    import threading
+
+    def mp_writer(classname, configfile, option, pipe):
+        #子进程 读入数据，并发到管道中
+        output_p, input_p = pipe
+        output_p.close()
+        datareader = myreader_classify(datasetfile, labelfile, mode)
+        for x in datareader:
+            input_p.send(x)
+
+    def mp_reader(queue):
+        #启动子进程，并从子进程读入数据，再写入队列queue
+        output_p, input_p = pipe = mp.Pipe()
+        #start subprocess for read
+        writer_p = mp.Process(
+            target=mp_writer, args=(datasetfile, labelfile, mode, pipe))
+        writer_p.start()
+
+        input_p.close()
+        while True:
+            try:
+                bloblist = output_p.recv()
+                queue.put(bloblist)
+            except EOFError:
+                break
+
+    queue = Queue.Queue(60)
+    threads = []
+    for i in range(threadnum):
+        thread = threading.Thread(target=mp_reader, args=(queue, ))
+        thread.setDaemon(True)
+        thread.start()
+
+    while True:
+        yield queue.get()
+
 
 def test_reader():
     import paddle
@@ -133,13 +181,13 @@ def test_reader():
 
     def getreader():
         reader = myreader_classify('dataset/cifar10/cifar10_train.data',
-                                   'dataset/cifar10/cifar10_train.label', 'train')
+                                   'dataset/cifar10/cifar10_train.label',
+                                   'train')
         return reader
 
     reader = paddle.batch(
         getreader, batch_size=train_batch_size, drop_last=True)
 
-    
     if 0:
         imagevar = fluid.layers.data(
             name='image', shape=[3, 32, 32], dtype='float32')
@@ -156,16 +204,17 @@ def test_reader():
             print('feeddata', feeddata)
             break
 
-    pyreader = fluid.layers.py_reader(capacity=64,
-                                      shapes=[(-1,3,33,33), (-1,1)],
-                                         dtypes=['float32', 'int64'])
+    pyreader = fluid.layers.py_reader(
+        capacity=64,
+        shapes=[(-1, 3, 33, 33), (-1, 1)],
+        dtypes=['float32', 'int64'])
     pyreader.decorate_paddle_reader(reader)
-    
+
     img, label = fluid.layers.read_file(pyreader)
     loss = fluid.layers.mean(img)
     optimizer = fluid.optimizer.SGD(learning_rate=0.1)
     opts = optimizer.minimize(loss)
-    
+
     fluid.Executor(fluid.CUDAPlace(0)).run(fluid.default_startup_program())
     exe = fluid.ParallelExecutor(use_cuda=True, loss_name=loss.name)
     pyreader.start()
@@ -175,7 +224,19 @@ def test_reader():
             print outputlist
         except fluid.core.EOFException as e:
             reader.reset()
-        
+
+
+def test_reader1():
+    train_datasetfile = 'dataset/face_ms1m/ms1m_train.data'
+    train_labelfile = 'dataset/face_ms1m/ms1m_train_80000.label'
+
+    val_datasetfile = 'dataset/face_ms1m/ms1m_train.data'
+    val_labelfile = 'dataset/face_ms1m/ms1m_train_5164.label'
+    traindataset = myreader_classify(
+        train_datasetfile, train_labelfile, 'train', doshuffle=False)
+    for img, label in traindataset:
+        break
+
 
 if __name__ == '__main__':
     import sys

@@ -108,6 +108,54 @@ def test_convert_face_test(datafolder, outputprefix):
             print('finish', datasetname, count)
 
 
+def convert_patchfolder(datafolder, writer, idstart, labelstart):
+    def read_patch_file(fname, patch_w, patch_h):
+        img = cv2.imread(fname, 0)
+        height, width = img.shape[:2]
+        assert (height == 1024 and width == 1024)
+        assert ((height % patch_h == 0) and (width % patch_w == 0))
+        for y in range(0, height, patch_h):
+            for x in range(0, width, patch_w):
+                patch = img[y:y + patch_h, x:x + patch_w].copy()
+                if (patch.mean() != 0) and (patch.astype(np.float32).std() >
+                                            1e-2):
+                    yield patch
+
+    labels = np.fromfile(
+        os.path.join(datafolder, 'info.txt'), np.int32, sep=' ').reshape((-1,
+                                                                          2))
+    offset = 0
+
+    for i in range(10000):
+        bmpfile = os.path.join(datafolder, 'patches%4.4d.bmp' % (i))
+        #print bmpfile
+        if not os.path.exists(bmpfile):
+            print('total image number is %s' % i)
+            break
+
+        for patch in read_patch_file(bmpfile, 64, 64):
+            label = int(labels[offset][0])
+            offset += 1
+            key = str(idstart + offset)
+            dummy, imgdata = cv2.imencode('.png', patch)
+            writer.adddata(key, imgdata)
+            writer.addlabel(key + '\t' + str(labelstart + label))
+        if i % 100 == 0:
+            print '#',
+    print(datafolder, 'totalimg', offset, 'totallabel', label + 1)
+    assert (offset == len(labels))
+    maxlabel = labelstart + label + 1
+    return idstart + offset, maxlabel
+
+
+def test_convert_patchfolders(outputprefix, *folders):
+    writer = DataSetWriter(outputprefix)
+    idstart, labelstart = 0, 0
+    for folder in folders:
+        idstart, labelstart = convert_patchfolder(folder, writer, idstart,
+                                                  labelstart)
+
+
 if __name__ == '__main__':
     import sys
     if len(sys.argv) > 1:

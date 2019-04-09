@@ -43,6 +43,13 @@ class ResNet():
             act='relu',
             name="conv1")
 
+        conv = fluid.layers.pool2d(
+            input=conv,
+            pool_size=3,
+            pool_stride=2,
+            pool_padding=1,
+            pool_type='max')
+
         for block in range(len(depth)):
             for i in range(depth[block]):
                 conv_name = "res" + str(block + 2) + chr(97 + i)
@@ -61,7 +68,7 @@ class ResNet():
             embedding = fluid.layers.fc(
                 input=pool,
                 size=embedding_size,
-                act='softmax',
+                act=None,
                 param_attr=fluid.param_attr.ParamAttr(
                     initializer=fluid.initializer.Uniform(-stdv, stdv)))
 
