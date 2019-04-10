@@ -81,58 +81,69 @@ trainmodule.models = Models({
 })
 trainmodule.model_list = ['L2Net', 'ResNet18']
 
+def initrandom():
+    np.random.seed(0)
+    fluid.default_startup_program().random_seed = 1000
+    fluid.default_main_program().random_seed = 1000
+    
 def testforward():
     #debug loss NaN problem
     from losses import SoftmaxLoss
     from losses import ArcMarginLoss
     traindataset = myreader.myreader_classify(
-            train_datasetfile,
-            train_labelfile,
-            'train',
-            iscolor=0,
-            preprocessfunc=preprocess)
-    
+        train_datasetfile,
+        train_labelfile,
+        'train',
+        iscolor=0,
+        doshuffle=True,
+        preprocessfunc=preprocess)
+
     embedding_size = 64
-    class_dim = 500000
-    batchsize = 512
+    class_dim = 50000
+    batchsize = 128
     model = l2net.L2Net()
     #model = resnet18.ResNet18()
-    image = fluid.layers.data(name='image', shape=[1,32,32], dtype='uint8')
-    label = fluid.layers.data(name='label', shape=[1], dtype='int64')
+    image = fluid.layers.data(name='image', shape=[1, 32, 32], dtype='uint8')
+    labelvar = fluid.layers.data(name='label', shape=[1], dtype='int64')
     inputdata = trainmodule.preprocessimg(image)
     out = model.net(input=inputdata, embedding_size=embedding_size)
-    #metricloss = ArcMarginLoss(class_dim = class_dim,margin = 0.5,scale = 64,easy_margin = False)
-    
-    metricloss = SoftmaxLoss(class_dim=class_dim)
-    
-    cost, logit = metricloss.loss(out, label)
+    metricloss = ArcMarginLoss(
+        class_dim=class_dim, margin=0.5, scale=64, easy_margin=False)
+
+    #metricloss = SoftmaxLoss(class_dim=class_dim)
+
+    cost, logit = metricloss.loss(out, labelvar)
     avg_cost = fluid.layers.mean(x=cost)
-    
+
     imgs = []
     labels = []
-    for img,label in traindataset:
-        imgs.append(img.reshape(1,1,32,32))
-        labels.append(label)
-        if len(imgs) == batchsize:
-            break
+    for img, label in traindataset:
+        if label < class_dim:
+            imgs.append(img.reshape(1, 1, 32, 32))
+            labels.append(label)
+            if len(imgs) == batchsize:
+                break
     imgs = np.vstack(imgs)
-    labels = np.array(labels, np.int64).reshape((-1,1))
-    
+    labels = np.array(labels, np.int64).reshape((-1, 1))
+
     optimizer = fluid.optimizer.SGD(learning_rate=0.1)
     opts = optimizer.minimize(avg_cost)
-   
-    #lace = fluid.CPUPlace()
-    place = fluid.CUDAPlace(0)
+
+    place = fluid.CPUPlace()
+    #place = fluid.CUDAPlace(0)
     exe = fluid.Executor(place)
     exe.run(fluid.default_startup_program())
-        
-    print('avg_cost.name', avg_cost.name)
-    outputlist = exe.run(
+
+    loss_value, output_value, label_value = exe.run(
         fluid.default_main_program(),
-        feed={'image': imgs,'label':labels},
-        fetch_list=[avg_cost.name])
-    
-    print 'outputlist', outputlist
+        feed={
+            'image': imgs,
+            'label': labels
+        },
+        fetch_list=[cost.name, out.name, labelvar.name])
+
+    for x,y,z in zip(loss_value, output_value, label_value):
+        print list(x.flat),np.sum(y.flat),list(z.flat)
     
 
 def trainmain():
@@ -140,7 +151,8 @@ def trainmain():
         'train.py',
         #"--use_gpu=false",
         "--input_dtype=uint8",
-        "--model=L2Net",
+        #"--model=L2Net",
+        "--model=ResNet18",
         "--train_batch_size=512",
         "--test_batch_size=64",
         "--embedding_size=64",

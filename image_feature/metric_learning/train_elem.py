@@ -320,7 +320,6 @@ def train_async(args):
         #注意对于pyreader异步读取，不需要传入feed 参数了
         lr, loss, acc1, acc5 = train_exe.run(fetch_list=train_fetch_list)
         t2 = time.time()
-        print('#'*30, loss)
         period = t2 - t1
         lr = np.mean(np.array(lr))
         train_info[0] += np.mean(np.array(loss))

@@ -22,9 +22,9 @@ class ArcMarginLoss():
 
     def arc_margin_product(self, input, label, out_dim, m, s, easy_margin=False):
         #对输出特征做L2 norm
-        #input = fluid.layers.l2_normalize(input, axis=1)
-        input_norm = fluid.layers.sqrt(fluid.layers.reduce_sum(fluid.layers.square(input), dim=1))
-        input = fluid.layers.elementwise_div(input, input_norm, axis=0)
+        input = fluid.layers.l2_normalize(input, axis=1)
+        #input_norm = fluid.layers.sqrt(fluid.layers.reduce_sum(fluid.layers.square(input), dim=1))
+        #input = fluid.layers.elementwise_div(input, input_norm, axis=0)
 
         weight = fluid.layers.create_parameter(
                     shape=[out_dim, input.shape[1]],
@@ -33,9 +33,9 @@ class ArcMarginLoss():
                     attr=fluid.param_attr.ParamAttr(
                                   initializer=fluid.initializer.Xavier()))
         #对分类的FC层参数也做L2norm
-        #weight = fluid.layers.l2_normalize(weight, axis=1)
-        weight_norm = fluid.layers.sqrt(fluid.layers.reduce_sum(fluid.layers.square(weight), dim=1))
-        weight = fluid.layers.elementwise_div(weight, weight_norm, axis=0)
+        weight = fluid.layers.l2_normalize(weight, axis=1)
+        #weight_norm = fluid.layers.sqrt(fluid.layers.reduce_sum(fluid.layers.square(weight), dim=1))
+        #weight = fluid.layers.elementwise_div(weight, weight_norm, axis=0)
 
         #做内积（FC）, 输出结果相当于和每个fc行的consine相似度
         weight = fluid.layers.transpose(weight, perm = [1, 0])
