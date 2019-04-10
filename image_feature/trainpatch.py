@@ -29,7 +29,7 @@ def preprocess(img, mode):
 
 def train(args):
     def train_reader():
-        traindataset = myreader.myreader_classify(
+        traindataset = myreader.myreader_classify_multiprocess(
             train_datasetfile,
             train_labelfile,
             'train',
@@ -81,14 +81,67 @@ trainmodule.models = Models({
 })
 trainmodule.model_list = ['L2Net', 'ResNet18']
 
+def testforward():
+    #debug loss NaN problem
+    from losses import SoftmaxLoss
+    from losses import ArcMarginLoss
+    traindataset = myreader.myreader_classify(
+            train_datasetfile,
+            train_labelfile,
+            'train',
+            iscolor=0,
+            preprocessfunc=preprocess)
+    
+    embedding_size = 64
+    class_dim = 500000
+    batchsize = 512
+    model = l2net.L2Net()
+    #model = resnet18.ResNet18()
+    image = fluid.layers.data(name='image', shape=[1,32,32], dtype='uint8')
+    label = fluid.layers.data(name='label', shape=[1], dtype='int64')
+    inputdata = trainmodule.preprocessimg(image)
+    out = model.net(input=inputdata, embedding_size=embedding_size)
+    #metricloss = ArcMarginLoss(class_dim = class_dim,margin = 0.5,scale = 64,easy_margin = False)
+    
+    metricloss = SoftmaxLoss(class_dim=class_dim)
+    
+    cost, logit = metricloss.loss(out, label)
+    avg_cost = fluid.layers.mean(x=cost)
+    
+    imgs = []
+    labels = []
+    for img,label in traindataset:
+        imgs.append(img.reshape(1,1,32,32))
+        labels.append(label)
+        if len(imgs) == batchsize:
+            break
+    imgs = np.vstack(imgs)
+    labels = np.array(labels, np.int64).reshape((-1,1))
+    
+    optimizer = fluid.optimizer.SGD(learning_rate=0.1)
+    opts = optimizer.minimize(avg_cost)
+   
+    #lace = fluid.CPUPlace()
+    place = fluid.CUDAPlace(0)
+    exe = fluid.Executor(place)
+    exe.run(fluid.default_startup_program())
+        
+    print('avg_cost.name', avg_cost.name)
+    outputlist = exe.run(
+        fluid.default_main_program(),
+        feed={'image': imgs,'label':labels},
+        fetch_list=[avg_cost.name])
+    
+    print 'outputlist', outputlist
+    
 
 def trainmain():
     sys.argv = [
         'train.py',
-        "--use_gpu=false",
+        #"--use_gpu=false",
         "--input_dtype=uint8",
-        "--model=ResNet18",
-        "--train_batch_size=128",
+        "--model=L2Net",
+        "--train_batch_size=512",
         "--test_batch_size=64",
         "--embedding_size=64",
         "--class_dim=500000",
@@ -113,3 +166,4 @@ def trainmain():
 
 if __name__ == '__main__':
     trainmain()
+    #testforward()
