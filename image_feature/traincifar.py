@@ -70,6 +70,7 @@ trainmodule.model_list = ['ResNet18']
 def trainmain():
     sys.argv = [
         'train.py',
+        "--use_gpu=false",
         "--input_dtype=uint8",
         "--model=ResNet18",
         "--train_batch_size=128",

@@ -18,7 +18,8 @@ class HardNet():
     def __init__(self):
         self.params = train_parameters
 
-    def net(self, input, dim=128):
+    def net(self, input, embedding_size):
+
         conv1 = self.conv_bn_layer(
             input, num_filters=32, filter_size=3, stride=1, padding=1)
         conv2 = self.conv_bn_layer(
@@ -33,8 +34,12 @@ class HardNet():
             conv5, num_filters=128, filter_size=3, stride=1, padding=1)
         conv6 = fluid.layers.dropout(x=conv6, dropout_prob=0.3)
         out = self.conv_bn_layer(
-            conv6, num_filters=dim, filter_size=8, stride=1, padding=0)
-
+            conv6,
+            num_filters=embedding_size,
+            filter_size=8,
+            stride=1,
+            padding=0)
+        #print('#'*20, input.shape, out.shape)
         return out
 
     def conv_bn_layer(self,

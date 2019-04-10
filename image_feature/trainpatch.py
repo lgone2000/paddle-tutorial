@@ -9,8 +9,10 @@ import paddle.fluid as fluid
 import train_elem as trainmodule
 import myreader
 import logging
+import resnet18
 import l2net
-
+import numpy as np
+import cv2
 #替换老的reader
 
 train_datasetfile = 'dataset/samepatch_train/samepatch_train.data'
@@ -20,13 +22,14 @@ val_datasetfile = 'dataset/samepatch_train/samepatch_train.data'
 val_labelfile = 'dataset/samepatch_train/samepatch_test_44803.label'
 
 
-def preprocess(img):
+def preprocess(img, mode):
+    img = cv2.resize(img, (32, 32))
     return img.reshape((1, img.shape[0], img.shape[1]))
 
 
 def train(args):
     def train_reader():
-        traindataset = myreader.myreader_classify_multiprocess(
+        traindataset = myreader.myreader_classify(
             train_datasetfile,
             train_labelfile,
             'train',
@@ -72,16 +75,20 @@ class Models(object):
             setattr(self, modelname, modelinfo[modelname])
 
 
-trainmodule.models = Models({'L2Net': l2net.L2Net})
-trainmodule.model_list = ['L2Net']
+trainmodule.models = Models({
+    'L2Net': l2net.L2Net,
+    'ResNet18': resnet18.ResNet18
+})
+trainmodule.model_list = ['L2Net', 'ResNet18']
 
 
 def trainmain():
     sys.argv = [
         'train.py',
+        "--use_gpu=false",
         "--input_dtype=uint8",
-        "--model=L2Net",
-        "--train_batch_size=512",
+        "--model=ResNet18",
+        "--train_batch_size=128",
         "--test_batch_size=64",
         "--embedding_size=64",
         "--class_dim=500000",
@@ -93,7 +100,7 @@ def trainmain():
         #"--l2_decay=5e-4",
         "--lr_strategy=cosine_decay_with_warmup",
         "--warmup_iter_num=6000",
-        "--display_iter_step=10",
+        "--display_iter_step=5",
         "--total_iter_num=18000",
         "--test_iter_step=500",
         "--save_iter_step=3000",

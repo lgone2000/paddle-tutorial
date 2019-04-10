@@ -134,7 +134,13 @@ def myreader_classify(datasetfile,
 
 
 #仅用于训练
-def myreader_classify_multiprocess(datasetfile, labelfile, mode, threadnum=4):
+def myreader_classify_multiprocess(datasetfile,
+                                   labelfile,
+                                   mode,
+                                   doshuffle=True,
+                                   iscolor=1,
+                                   preprocessfunc=None,
+                                   threadnum=4):
     import multiprocessing as mp
     import Queue
     import threading
@@ -143,7 +149,8 @@ def myreader_classify_multiprocess(datasetfile, labelfile, mode, threadnum=4):
         #子进程 读入数据，并发到管道中
         output_p, input_p = pipe
         output_p.close()
-        datareader = myreader_classify(datasetfile, labelfile, mode)
+        datareader = myreader_classify(datasetfile, labelfile, mode, doshuffle,
+                                       iscolor, preprocessfunc)
         for x in datareader:
             input_p.send(x)
 

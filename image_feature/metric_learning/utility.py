@@ -92,6 +92,13 @@ def recall_topk(fea, lab, k = 1):
     res = res / len(fea)
     return res
 
+def get_cpu_num():
+    cpu_num = os.getenv('CPU_NUM')
+    if cpu_num:
+        return int(cpu_num)
+    else:
+        assert(False)
+    
 def get_gpu_num():
     visibledevice = os.getenv('CUDA_VISIBLE_DEVICES')
     if visibledevice:

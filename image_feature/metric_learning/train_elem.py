@@ -20,7 +20,7 @@ import reader
 from losses import SoftmaxLoss
 from losses import ArcMarginLoss
 from utility import add_arguments, print_arguments
-from utility import fmt_time, recall_topk, get_gpu_num
+from utility import fmt_time, recall_topk, get_gpu_num, get_cpu_num
 
 from paddle.fluid.layers.learning_rate_scheduler import _decay_step_counter
 from paddle.fluid.initializer import init_on_cpu
@@ -285,9 +285,13 @@ def train_async(args):
             exe, pretrained_model, main_program=train_prog, predicate=if_exist)
 
     #得到机器gpu卡数。
-    devicenum = get_gpu_num()
-    assert (args.train_batch_size % devicenum) == 0
-    
+    #
+    if args.use_gpu:
+        devicenum = get_gpu_num()
+        assert (args.train_batch_size % devicenum) == 0
+    else:
+        devicenum = get_cpu_num()
+        assert (args.train_batch_size % devicenum) == 0
     #注意： 使用py_reader 的输入的batch大小，是单卡的batch大小，所以要除一下
     train_batch_size = args.train_batch_size // devicenum
     test_batch_size = args.test_batch_size
