@@ -13,11 +13,17 @@ import resnet18
 
 #替换老的reader
 
-train_datasetfile = 'dataset/face_ms1m/ms1m_train.data'
-train_labelfile = 'dataset/face_ms1m/ms1m_train_80000.label'
+# train_datasetfile = 'dataset/face_ms1m/ms1m_train.data'
+# train_labelfile = 'dataset/face_ms1m/ms1m_train_80000.label'
 
-val_datasetfile = 'dataset/face_ms1m/ms1m_train.data'
-val_labelfile = 'dataset/face_ms1m/ms1m_train_5164.label'
+# val_datasetfile = 'dataset/face_ms1m/ms1m_train.data'
+# val_labelfile = 'dataset/face_ms1m/ms1m_train_5164.label'
+
+train_datasetfile = 'dataset/face_ms1m_small/train.data'
+train_labelfile = 'dataset/face_ms1m_small/train.label'
+
+val_datasetfile = 'dataset/face_ms1m_small/test.data'
+val_labelfile = 'dataset/face_ms1m_small/test.label'
 
 
 def train(args):
@@ -67,7 +73,7 @@ trainmodule.model_list = ['ResNet18']
 
 
 def trainmain():
-    sys.argv = [
+    bigargv = [
         'train.py',
         "--input_dtype=uint8",
         "--model=ResNet18",
@@ -77,10 +83,6 @@ def trainmain():
         "--class_dim=80000",
         "--image_shape=3,112,112",
         "--lr=0.1",
-        #"--lr_strategy=piecewise_decay",
-        #"--lr_steps=100000, 140000, 160000",
-        #"--lr_epoch=30, 60, 90",
-        #"--l2_decay=5e-4",
         "--lr_strategy=cosine_decay_with_warmup",
         "--warmup_iter_num=12000",
         "--display_iter_step=10",
@@ -91,6 +93,29 @@ def trainmain():
         "--arc_scale=64",
         "--arc_margin=0.5",
     ]
+    
+    smallargv = [
+        'train.py',
+        "--use_gpu=false",
+        "--input_dtype=uint8",
+        "--model=ResNet18",
+        "--train_batch_size=256",
+        "--test_batch_size=64",
+        "--embedding_size=256",
+        "--class_dim=1000",
+        "--image_shape=3,112,112",
+        "--lr=0.1",
+        "--lr_strategy=cosine_decay_with_warmup",
+        "--warmup_iter_num=1200",
+        "--display_iter_step=10",
+        "--total_iter_num=3600",
+        "--test_iter_step=500",
+        "--save_iter_step=600",
+        "--loss_name=arcmargin",
+        "--arc_scale=64",
+        "--arc_margin=0.5",
+    ]
+    sys.argv = smallargv
     trainmodule.main()
 
 

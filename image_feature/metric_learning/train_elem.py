@@ -92,7 +92,6 @@ def optimizer_setting(params, args):
 
 #在网络里面减均值除方差
 def preprocessimg(image):
-    logging.debug('cast image to float32')
     data_ori = fluid.layers.cast(x=image, dtype='float32')
     mean_values_numpy = np.array(reader.img_mean, np.float32).reshape(
         -1, 1, 1).astype(np.float32)

@@ -7,13 +7,13 @@ import math
 import paddle.fluid as fluid
 
 class ArcMarginLoss():
-    def __init__(self, class_dim, margin=0.15, scale=80.0):
+    def __init__(self, class_dim, margin=0.15, scale=80.0, easy_margin=False):
         self.class_dim = class_dim
         self.margin = margin
         self.scale = scale
         self.easy_margin = easy_margin
 
-    def arc_margin_product(self, input, label, out_dim, m, s):
+    def arc_margin_product(self, input, label, out_dim, m, s, easy_margin=False):
         #对输出特征做L2 norm
         input = fluid.layers.l2_normalize(input, axis=1)
         

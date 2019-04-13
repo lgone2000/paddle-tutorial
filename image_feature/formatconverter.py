@@ -155,6 +155,28 @@ def test_convert_patchfolders(outputprefix, *folders):
                                                   labelstart)
 
 
+#python formatconverter.py test_cutdataset dataset/face_ms1m/ms1m_train.data  dataset/face_ms1m/ms1m_train_1000.label dataset/face_ms1m_small/train
+#python formatconverter.py test_cutdataset dataset/face_ms1m/ms1m_train.data  dataset/face_ms1m/ms1m_test_300.label dataset/face_ms1m_small/test
+
+def test_cutdataset(inputdata, inputlabel, outputprefix):
+    from myreader import ImageData
+    alldatas = []
+    imagedata = ImageData(inputdata)
+    alllabels = {}
+    for line in open(inputlabel, 'rb'):
+        key, label = line.split()
+        img = imagedata.getvalue(key)
+        label = int(label)
+        alldatas.append([key,img, label])
+        alllabels[label] = None
+        
+    labelmap = {label:i for i, label in enumerate(sorted(alllabels.keys()))}
+    writer = DataSetWriter(outputprefix)
+    for key, imgdata, label in alldatas:
+        writer.adddata(key, imgdata)
+        writer.addlabel(key + '\t' + str(label))
+
+    
 if __name__ == '__main__':
     import sys
     if len(sys.argv) > 1:

@@ -30,8 +30,11 @@ class ResNet():
 
     def net(self, input, embedding_size=256):
         layers = self.layers
+        supported_layers = [50, 101, 152]
+        assert layers in supported_layers, \
+            "supported layers are {} but input layer is {}".format(supported_layers, layers)
 
-        layers == 50:
+        if layers == 50:
             depth = [3, 4, 6, 3]
         elif layers == 101:
             depth = [3, 4, 23, 3]
@@ -72,8 +75,11 @@ class ResNet():
             input=conv, pool_size=7, pool_type='avg', global_pooling=True)
 
         #使用fc 将输出维度从2048变为embedding_size
-        embedding = fluid.layers.fc(input=pool, size=embedding_size)
-        return embedding
+        if embedding_size > 0:
+            embedding = fluid.layers.fc(input=pool, size=embedding_size)
+            return embedding
+        else:
+            return pool
         
     def conv_bn_layer(self,
                       input,

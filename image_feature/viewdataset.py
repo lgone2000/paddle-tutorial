@@ -152,8 +152,9 @@ def main():
     ip = '0.0.0.0'
     port = '8000'
     datasets = [
-        ('cifar10train', './cifar10/cifar10_train'),
-        ('facetest', './face/face_ms1m/face_test'),
+        ('cifar10train', './dataset/cifar10/cifar10_train'),
+        ('facetrain', './dataset/face_ms1m_small/train'),
+        ('facetest', './dataset/face_ms1m_small/test'),
     ]
     global _feadb
     _feadb = Feadb(datasets)
