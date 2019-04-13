@@ -22,7 +22,9 @@ val_labelfile = 'dataset/face_ms1m/ms1m_train_5164.label'
 
 def train(args):
     def train_reader():
-        traindataset = myreader.myreader_classify_multiprocess(
+        #readerfunc =  myreader.myreader_classify
+        readerfunc = myreader.create_multiprocessreader(myreader.myreader_classify, 4)
+        traindataset = readerfunc(
             train_datasetfile, train_labelfile, 'train')
         for image, label in traindataset:
             yield image, label

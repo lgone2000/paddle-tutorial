@@ -30,11 +30,8 @@ class ResNet():
 
     def net(self, input, embedding_size=256):
         layers = self.layers
-        supported_layers = [50, 101, 152]
-        assert layers in supported_layers, \
-            "supported layers are {} but input layer is {}".format(supported_layers, layers)
 
-        if layers == 50:
+        layers == 50:
             depth = [3, 4, 6, 3]
         elif layers == 101:
             depth = [3, 4, 23, 3]
@@ -44,7 +41,8 @@ class ResNet():
 
         # conv7x7 --> relu --> bn
         conv = self.conv_bn_layer(
-            input=input, num_filters=64, filter_size=7, stride=2, act='relu',name="conv1")
+                input=input, num_filters=64, filter_size=7, 
+                stride=2, act='relu',name="conv1")
         
         #maxpool3x3
         conv = fluid.layers.pool2d(
@@ -74,12 +72,9 @@ class ResNet():
             input=conv, pool_size=7, pool_type='avg', global_pooling=True)
 
         #使用fc 将输出维度从2048变为embedding_size
-        if embedding_size > 0:
-            embedding = fluid.layers.fc(input=pool, size=embedding_size)
-            return embedding
-        else:
-            return pool
-
+        embedding = fluid.layers.fc(input=pool, size=embedding_size)
+        return embedding
+        
     def conv_bn_layer(self,
                       input,
                       num_filters,
@@ -122,7 +117,8 @@ class ResNet():
     def bottleneck_block(self, input, num_filters, stride, name):
         # conv0 1x1 降维到 num_filters
         conv0 = self.conv_bn_layer(
-            input=input, num_filters=num_filters, filter_size=1, act='relu',name=name+"_branch2a")
+            input=input, num_filters=num_filters, 
+            filter_size=1, act='relu',name=name+"_branch2a")
         
         #conv1 3x3 + relu
         conv1 = self.conv_bn_layer(
@@ -135,12 +131,14 @@ class ResNet():
         
         #conv2 1x1 升维到4*num_filters
         conv2 = self.conv_bn_layer(
-            input=conv1, num_filters=num_filters * 4, filter_size=1, act=None, name=name+"_branch2c")
+            input=conv1, num_filters=num_filters * 4, 
+            filter_size=1, act=None, name=name+"_branch2c")
 
         short = self.shortcut(input, num_filters * 4, stride, name=name + "_branch1")
 
         #直接累加输入到conv2
-        return fluid.layers.elementwise_add(x=short, y=conv2, act='relu',name=name+".add.output.5")
+        return fluid.layers.elementwise_add(
+                x=short, y=conv2, act='relu',name=name+".add.output.5")
 
 
 def ResNet50():

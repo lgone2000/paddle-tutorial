@@ -16,8 +16,8 @@ import cv2
 #替换老的reader
 
 train_datasetfile = 'dataset/samepatch_train/samepatch_train.data'
-train_labelfile = 'dataset/samepatch_train/samepatch_train_500000.label'
-#train_labelfile = 'dataset/samepatch_train/samepatch_train_10000.label'
+#train_labelfile = 'dataset/samepatch_train/samepatch_train_500000.label'
+train_labelfile = 'dataset/samepatch_train/samepatch_train_10000.label'
 
 val_datasetfile = 'dataset/samepatch_train/samepatch_train.data'
 val_labelfile = 'dataset/samepatch_train/samepatch_test_44803.label'
@@ -30,10 +30,7 @@ def preprocess(img, mode):
 
 def train(args):
     def train_reader():
-        #readerfunc =  myreader.myreader_classify
-        readerfunc = myreader.create_multiprocessreader(myreader.myreader_classify, 4)
-        
-        traindataset = readerfunc(
+        traindataset = myreader.myreader_classify_multiprocess(
             train_datasetfile,
             train_labelfile,
             'train',
@@ -78,7 +75,6 @@ class Models(object):
         for modelname in modelinfo:
             setattr(self, modelname, modelinfo[modelname])
 
-
 trainmodule.models = Models({
     'L2Net': l2net.L2Net,
     'ResNet18': resnet18.ResNet18
@@ -90,25 +86,24 @@ def trainmain():
     sys.argv = [
         'train.py',
         #"--use_gpu=false",
-        #"--checkpoint=output/L2Net/12000/",
         "--input_dtype=uint8",
         #"--model=L2Net",
         "--model=ResNet18",
         "--train_batch_size=512",
         "--test_batch_size=64",
         "--embedding_size=64",
-        "--class_dim=500000",
+        "--class_dim=10000",
         "--image_shape=1,32,32",
         "--lr=0.1",
+
         "--lr_strategy=cosine_decay_with_warmup",
         "--warmup_iter_num=6000",
         "--display_iter_step=5",
         "--total_iter_num=18000",
         "--test_iter_step=500",
         "--save_iter_step=3000",
-        "--loss_name=arcmargin",
-        "--arc_scale=64",
-        "--arc_margin=0.5",
+        "--loss_name=quadruplet",
+        "--margin=0.2",
     ]
     trainmodule.main()
 

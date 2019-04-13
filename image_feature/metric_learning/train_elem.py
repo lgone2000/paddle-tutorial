@@ -21,12 +21,7 @@ from losses import SoftmaxLoss
 from losses import ArcMarginLoss
 from utility import add_arguments, print_arguments
 from utility import fmt_time, recall_topk, get_gpu_num, get_cpu_num
-
-from paddle.fluid.layers.learning_rate_scheduler import _decay_step_counter
-from paddle.fluid.initializer import init_on_cpu
-import paddle.fluid.layers.ops as ops
-from paddle.fluid.layers import control_flow
-
+from learning_rate import *
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
 # yapf: disable
@@ -38,7 +33,7 @@ add_arg('test_batch_size', int, 50, "Minibatch size.")
 add_arg('image_shape', str, "3,224,224", "input image size")
 add_arg('class_dim', int, 11318 , "Class number.")
 add_arg('lr', float, 0.01, "set learning rate.")
-add_arg('lr_strategy', str, "piecewise_decay",	"Set the learning rate decay strategy.")
+add_arg('lr_strategy', str, "piecewise_decay", "Set the learning rate decay strategy.")
 add_arg('lr_steps', str, "15000,25000", "step of lr")
 
 add_arg('warmup_iter_num', int, 0, "warmup_iter_num")
@@ -55,6 +50,11 @@ add_arg('loss_name', str, "softmax", "Set the loss type to use.")
 add_arg('arc_scale', float, 80.0, "arc scale.")
 add_arg('arc_margin', float, 0.15, "arc margin.")
 add_arg('arc_easy_margin', bool, False, "arc easy margin.")
+
+add_arg('samples_each_class', int, 2, "samples_each_class.")
+add_arg('margin', float, 0.1, "margin.")
+add_arg('npairs_reg_lambda', float, 0.01, "npairs reg lambda.")
+
 add_arg('enable_ce', bool, False, "If set True, enable continuous evaluation job.")
 # yapf: enable
 
@@ -66,57 +66,23 @@ model_list = [m for m in dir(models) if "__" not in m]
 #epochnum:训练轮数 目前统一到200， 会比90 高1%， finetune可以降低到10~20 epoch
 #Momentum优化器文档  http://paddlepaddle.org/documentation/docs/zh/1.3/api_cn/optimizer_cn.html#permalink-15-momentum
 
-def cosine_decay_v2(learning_rate, totalsteps):
-    """Applies cosine decay to the learning rate.
-    lr = 0.05 * (math.cos(global_step * (math.pi / totalsteps)) + 1)
-    decrease lr for every mini-batch.
-    """
-    global_step = _decay_step_counter()
-
-    with init_on_cpu():
-        decayed_lr = learning_rate * \
-                     (ops.cos(global_step * (math.pi / float(totalsteps))) + 1)/2
-    return decayed_lr
-
-def cosine_decay_v2_with_warmup(learning_rate, warmupsteps, totalsteps):
-    """Applies cosine decay to the learning rate.
-    lr = 0.05 * (math.cos(epoch * (math.pi / 120)) + 1)
-    decrease lr for every mini-batch and start with warmup.
-    """
-    global_step = _decay_step_counter()
-    lr = fluid.layers.tensor.create_global_var(
-        shape=[1],
-        value=0.0,
-        dtype='float32',
-        persistable=True,
-        name="learning_rate")
-
-    with init_on_cpu():
-        with control_flow.Switch() as switch:
-            with switch.case(global_step < warmupsteps):
-                decayed_lr = learning_rate * (global_step /
-                                              float(warmupsteps))
-                fluid.layers.tensor.assign(input=decayed_lr, output=lr)
-            with switch.default():
-                decayed_lr = learning_rate * \
-                     (ops.cos((global_step - warmupsteps) * (math.pi / (totalsteps))) + 1)/2
-                fluid.layers.tensor.assign(input=decayed_lr, output=lr)
-    return lr
-
 def optimizer_setting(params, args):
     ls = params["learning_strategy"]
-    assert ls["name"] in ["piecewise_decay", "cosine_decay", "cosine_decay_with_warmup"]
+    assert ls["name"] in [
+        "piecewise_decay", "cosine_decay", "cosine_decay_with_warmup"
+    ]
     base_lr = params["lr"]
-        
-    if ls['name'] == "piecewise_decay" :
+
+    if ls['name'] == "piecewise_decay":
         bd = [int(e) for e in ls["lr_steps"].split(',')]
-        lr = [base_lr * (0.1 ** i) for i in range(len(bd) + 1)]
+        lr = [base_lr * (0.1**i) for i in range(len(bd) + 1)]
         lrs = fluid.layers.piecewise_decay(boundaries=bd, values=lr)
-    elif ls['name'] == "cosine_decay" :
+    elif ls['name'] == "cosine_decay":
         lrs = cosine_decay_v2(base_lr, args.total_iter_num)
-    elif ls['name'] == "cosine_decay_with_warmup" :
-        lrs = cosine_decay_v2_with_warmup(base_lr, args.warmup_iter_num, args.total_iter_num)
-        
+    elif ls['name'] == "cosine_decay_with_warmup":
+        lrs = cosine_decay_v2_with_warmup(base_lr, args.warmup_iter_num,
+                                          args.total_iter_num)
+
     #相对于SGD ，使用Momentum 加快收敛速度而不影响收敛效果。如果用Adam，或者RMScrop收敛可以更快，但在imagenet上收敛有损失
     optimizer = fluid.optimizer.Momentum(
         learning_rate=lrs,
@@ -128,12 +94,14 @@ def optimizer_setting(params, args):
 def preprocessimg(image):
     logging.debug('cast image to float32')
     data_ori = fluid.layers.cast(x=image, dtype='float32')
-    mean_values_numpy = np.array(reader.img_mean,np.float32).reshape(-1, 1, 1).astype(np.float32)
+    mean_values_numpy = np.array(reader.img_mean, np.float32).reshape(
+        -1, 1, 1).astype(np.float32)
     mean_values = fluid.layers.create_tensor(dtype="float32")
     fluid.layers.assign(input=mean_values_numpy, output=mean_values)
     mean_values.stop_gradient = True
 
-    std_values_numpy = np.array(reader.img_std,np.float32).reshape(-1, 1, 1).astype(np.float32)
+    std_values_numpy = np.array(reader.img_std, np.float32).reshape(
+        -1, 1, 1).astype(np.float32)
     std_values = fluid.layers.create_tensor(dtype="float32")
     fluid.layers.assign(input=std_values_numpy, output=std_values)
     std_values.stop_gradient = True
@@ -145,45 +113,78 @@ def preprocessimg(image):
     return inputdata
 
 
-#基于deepid思路的，基于分类损失进行特征学习，对比 SoftmaxLoss, ArcMarginLoss。
-#原始网络+降维的fc 做为特征输出层， embedding_size 控制特征层维度。
-def net_config(image, label, model, args, is_train):
-    assert args.model in model_list, "{} is not in lists: {}".format(
-        args.model, model_list)
-
+def createmodel(image, model, args):
+    
     if args.input_dtype == 'uint8':
         assert (str(image.dtype) == 'VarType.UINT8')
         inputdata = preprocessimg(image)
     else:
         inputdata = image
-        
+
     out = model.net(input=inputdata, embedding_size=args.embedding_size)
-    if not is_train:
-        return None, None, None, out
+    return out
+
+
+def net_config_test(image, label, model, args):
+    out = createmodel(image,model, args)
+    return out, image, label
+
+
+#基于deepid思路的，基于分类损失进行特征学习，对比 SoftmaxLoss, ArcMarginLoss。
+#原始网络+降维的fc 做为特征输出层， embedding_size 控制特征层维度。
+def net_config_metric(image, label, model, args):
+    out = createmodel(image, model, args)
+
+    if args.loss_name == "triplet":
+        metricloss = TripletLoss(margin=args.margin, )
+    elif args.loss_name == "quadruplet":
+        metricloss = QuadrupletLoss(
+            train_batch_size=args.train_batch_size,
+            samples_each_class=args.samples_each_class,
+            margin=args.margin,
+        )
+    elif args.loss_name == "eml":
+        metricloss = EmlLoss(
+            train_batch_size=args.train_batch_size,
+            samples_each_class=args.samples_each_class,
+        )
+    elif args.loss_name == "npairs":
+        metricloss = NpairsLoss(
+            train_batch_size=args.train_batch_size,
+            samples_each_class=args.samples_each_class,
+            reg_lambda=args.npairs_reg_lambda,
+        )
+    cost, logit = metricloss.loss(out, label)
+    return [avg_cost, out, label]
+
+
+def net_config_classify(image, label, model, args):
+    out = createmodel(image, model, args)
 
     if args.loss_name == "softmax":
-        metricloss = SoftmaxLoss(
-                class_dim=args.class_dim,
-        )
+        metricloss = SoftmaxLoss(class_dim=args.class_dim, )
     elif args.loss_name == "arcmargin":
         metricloss = ArcMarginLoss(
-                class_dim = args.class_dim,
-                margin = args.arc_margin,
-                scale = args.arc_scale,
-                easy_margin = args.arc_easy_margin,
+            class_dim=args.class_dim,
+            margin=args.arc_margin,
+            scale=args.arc_scale,
+            easy_margin=args.arc_easy_margin,
         )
     cost, logit = metricloss.loss(out, label)
     avg_cost = fluid.layers.mean(x=cost)
     acc_top1 = fluid.layers.accuracy(input=logit, label=label, k=1)
     acc_top5 = fluid.layers.accuracy(input=logit, label=label, k=5)
-    return avg_cost, acc_top1, acc_top5, out
+    return [avg_cost, acc_top1, acc_top5]
+
 
 #标准的feed数据方式，通过executer.run 的feed参数同步传入数据， 并获得fetch变量的值。这样会导致 feed数据和训练是串行的两步，
 #采用py_reader可以使得feed数据和训练变成异步操作，加速训练过程
-def build_program(is_train, main_prog, startup_prog, args):
+def build_program(is_train, net_config, main_prog, startup_prog, args):
     image_shape = [int(m) for m in args.image_shape.split(",")]
     model = models.__dict__[args.model]()
-    
+    assert args.model in model_list, "{} is not in lists: {}".format(
+        args.model, model_list)
+
     #在 指定的main_prog 和start_prog 下组网（而不是用缺省的那个）
     with fluid.program_guard(main_prog, startup_prog):
         if is_train:
@@ -195,15 +196,19 @@ def build_program(is_train, main_prog, startup_prog, args):
                 dtypes=[args.input_dtype, "int64"],
                 use_double_buffer=True)
             image, label = fluid.layers.read_file(py_reader)
+            
         else:
-            image = fluid.layers.data(name='image', shape=image_shape, dtype=args.input_dtype)
+            py_reader = None
+            image = fluid.layers.data(
+                name='image', shape=image_shape, dtype=args.input_dtype)
             label = fluid.layers.data(name='label', shape=[1], dtype='int64')
 
         #fluid.unique_name.guard()函数是为了初始化参数名称的时候统一名称，同样名字的参数在不同网络中属于一个参数，则在使用这个网络的时候保证用的同一套参数，而且这个函数的传参可以规定网络中所有参数开头的名称
         with fluid.unique_name.guard():
             #构建网络结构
-            avg_cost, acc_top1, acc_top5, out = net_config(image, label, model, args, is_train)
+            outputvars = net_config(image, label, model, args)
             if is_train:
+                avg_cost = outputvars[0]
                 params = model.params
                 params["lr"] = args.lr
                 params["learning_strategy"]["lr_steps"] = args.lr_steps
@@ -212,14 +217,78 @@ def build_program(is_train, main_prog, startup_prog, args):
                 optimizer = optimizer_setting(params, args)
                 optimizer.minimize(avg_cost)
                 global_lr = optimizer._global_learning_rate()
+                outputvars.append(global_lr)
     """            
     if not is_train:
         main_prog = main_prog.clone(for_test=True)
     """
-    if is_train:
-        return py_reader, avg_cost, acc_top1, acc_top5, global_lr
-    else: 
-        return out, image, label
+    return py_reader, outputvars 
+
+
+class EvalTrain_Classify(object):
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.train_info = [0, 0, 0, 0]
+
+    def pushdata(self, outputlist):
+        lr, loss, acc1, acc5 = outputlist
+        self.lr = np.mean(np.array(lr))
+        self.train_info[0] += np.mean(np.array(loss))
+        self.train_info[1] += np.mean(np.array(acc1))
+        self.train_info[2] += np.mean(np.array(acc5))
+        self.train_info[3] += 1
+
+    def getaccuracy(self):
+        avg_loss = self.train_info[0] / self.train_info[3]
+        avg_acc1 = self.train_info[1] / self.train_info[3]
+        avg_acc5 = self.train_info[2] / self.train_info[3]
+        return {
+            'avg_loss': avg_loss,
+            'avg_acc1': avg_acc1,
+            'avg_acc5': avg_acc5,
+            'lr': self.lr
+        }
+
+
+class EvalTrain_Metric(object):
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.train_info = [0, 0, 0]
+
+    def pushdata(self, outputlist):
+        lr, loss, acc1, acc5 = outputlist
+        self.lr = np.mean(np.array(lr))
+        self.train_info[0] += np.mean(np.array(loss))
+        self.train_info[1] += recall_topk(feas, label, k=1)
+        self.train_info[2] += 1
+
+    def getaccuracy(self):
+        avg_loss = self.train_info[0] / self.train_info[2]
+        avg_recall = self.train_info[1] / self.train_info[2]
+        return {'avg_loss': avg_loss, 'avg_recall': avg_recall, 'lr': lr}
+
+
+class EvalTest(object):
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.f, self.l = [], []
+
+    def pushdata(self, outputlist):
+        feas, label = outputlist
+        self.f.append(feas)
+        self.l.append(label)
+
+    def getaccuracy(self):
+        f = np.vstack(self.f)
+        l = np.hstack(self.l)
+        recall = recall_topk(f, l, k=1)
+        return {'recall': recall}
 
 
 def train_async(args):
@@ -244,19 +313,37 @@ def train_async(args):
         train_prog.random_seed = 1000
         tmp_prog.random_seed = 1000
 
-    train_py_reader, train_cost, train_acc1, train_acc5, global_lr = build_program(
-        is_train=True,
-        main_prog=train_prog,
-        startup_prog=startup_prog,
-        args=args)
-    test_feas, image, label = build_program(
+    trainclassify = args.loss_name in ["softmax", "arcmargin"]
+    train_py_reader, outputvars = build_program(
+            is_train=True,
+            net_config = net_config_classify,
+            main_prog=train_prog,
+            startup_prog=startup_prog,
+            args=args)
+    
+    if trainclassify:
+        train_cost, train_acc1, train_acc5, global_lr = outputvars
+        train_fetch_list = [
+            global_lr.name, train_cost.name, train_acc1.name, train_acc5.name
+        ]
+        evaltrain = EvalTrain_Classify()
+
+    else:
+        train_cost, train_feas, train_label, global_lr = outputvars
+        train_fetch_list = [
+            global_lr.name, train_cost.name, train_feas.name, train_label.name
+        ]
+        evaltrain = EvalTrain_Metric()
+
+    _, outputvars= build_program(
         is_train=False,
+        net_config = net_config_test,
         main_prog=tmp_prog,
         startup_prog=startup_prog,
         args=args)
+    test_feas, image, label = outputvars
     test_prog = tmp_prog.clone(for_test=True)
 
-    train_fetch_list = [global_lr.name, train_cost.name, train_acc1.name, train_acc5.name]
     test_fetch_list = [test_feas.name]
 
     #打开内存优化，可以节省显存使用(注意，取出的变量要使用skip_opt_set设置一下，否则有可能被优化覆写)
@@ -295,12 +382,15 @@ def train_async(args):
     #注意： 使用py_reader 的输入的batch大小，是单卡的batch大小，所以要除一下
     train_batch_size = args.train_batch_size // devicenum
     test_batch_size = args.test_batch_size
-    
-    logging.debug('device number is %d, batch on each card:%d', devicenum, train_batch_size)
-    
+
+    logging.debug('device number is %d, batch on each card:%d', devicenum,
+                  train_batch_size)
+
     #创建新的train_reader 将输入的reader读入的数据组成batch 。另外将train_reader 连接到 pyreader,由pyreader创建的线程主动读取，不在主线程调用。
-    train_reader = paddle.batch(reader.train(args), batch_size=train_batch_size, drop_last=True)
-    test_reader = paddle.batch(reader.test(args), batch_size=test_batch_size, drop_last=False)
+    train_reader = paddle.batch(
+        reader.train(args), batch_size=train_batch_size, drop_last=True)
+    test_reader = paddle.batch(
+        reader.test(args), batch_size=test_batch_size, drop_last=False)
     test_feeder = fluid.DataFeeder(place=place, feed_list=[image, label])
     train_py_reader.decorate_paddle_reader(train_reader)
 
@@ -314,57 +404,55 @@ def train_async(args):
     #启动pyreader的读取线程
     train_py_reader.start()
     iter_no = 0
-    train_info = [0, 0, 0, 0]
     while iter_no <= args.total_iter_num:
         t1 = time.time()
         #注意对于pyreader异步读取，不需要传入feed 参数了
-        lr, loss, acc1, acc5 = train_exe.run(fetch_list=train_fetch_list)
+        outputlist = train_exe.run(fetch_list=train_fetch_list)
         t2 = time.time()
         period = t2 - t1
-        lr = np.mean(np.array(lr))
-        train_info[0] += np.mean(np.array(loss))
-        train_info[1] += np.mean(np.array(acc1))
-        train_info[2] += np.mean(np.array(acc5))
-        train_info[3] += 1
+
+        evaltrain.pushdata(outputlist)
+
         #计算多个batch的平均准确率
         if iter_no % args.display_iter_step == 0:
             avgruntime = totalruntime / args.display_iter_step
-            avg_loss = train_info[0] / train_info[3]
-            avg_acc1 = train_info[1] / train_info[3]
-            avg_acc5 = train_info[2] / train_info[3]
-            print("[%s] trainbatch %d, lr %.6f, loss %.6f, "\
-                    "acc1 %.4f, acc5 %.4f, time %2.2f sec" % \
-                    (fmt_time(), iter_no, lr, avg_loss, avg_acc1, avg_acc5, avgruntime))
+            train_accuracy = evaltrain.getaccuracy()
+
+            print("[%s] trainbatch %d, "\
+                    "accuracy[%s], time %2.2f sec" % \
+                    (fmt_time(), iter_no, train_accuracy, avgruntime))
             sys.stdout.flush()
             totalruntime = 0
         if iter_no % 1000 == 0:
-            train_info = [0, 0, 0, 0]
+            evaltrain.reset()
 
         totalruntime += period
-        
-        if iter_no % args.test_iter_step == 0 and (pretrained_model or iter_no != 0):
+
+        if iter_no % args.test_iter_step == 0 and (pretrained_model or checkpoint or iter_no != 0):
             #保持多个batch的feature 和 label 分别到 f, l
-            f, l = [], []
+            evaltest = EvalTest()
             max_test_count = 100
             for batch_id, data in enumerate(test_reader()):
                 t1 = time.time()
-                [feas] = exe.run(test_prog, fetch_list = test_fetch_list, feed=test_feeder.feed(data))
+                test_outputlist = exe.run(
+                    test_prog,
+                    fetch_list=test_fetch_list,
+                    feed=test_feeder.feed(data))
+                
                 label = np.asarray([x[1] for x in data])
-                f.append(feas)
-                l.append(label)
+        
+                evaltest.pushdata((test_outputlist[0], label))
                 t2 = time.time()
                 period = t2 - t1
                 if batch_id % 20 == 0:
                     print("[%s] testbatch %d, time %2.2f sec" % \
                             (fmt_time(), batch_id, period))
-                if batch_id > max_test_count :
+                if batch_id > max_test_count:
                     break
             #测试检索的准确率，当query和检索结果类别一致，检索正确。（这里测试数据集类别与训练数据集类别不重叠，因此网络输出的类别没有意义）
-            f = np.vstack(f)
-            l = np.hstack(l)
-            recall = recall_topk(f, l, k=1)
-            print("[%s] test_img_num %d, trainbatch %d, test_recall %.5f" % \
-                    (fmt_time(), len(f), iter_no, recall))
+            test_recall = evaltest.getaccuracy()
+            print("[%s] test_img_num %d, trainbatch %d, testaccarcy %s" % \
+                    (fmt_time(), max_test_count * args.test_batch_size, iter_no, test_recall))
             sys.stdout.flush()
 
         if iter_no % args.save_iter_step == 0 and iter_no != 0:
@@ -373,7 +461,8 @@ def train_async(args):
             if not os.path.isdir(model_path):
                 os.makedirs(model_path)
             #保存模型， 可用于训练断点恢复
-            fluid.io.save_persistables(exe, model_path, main_program=train_prog)
+            fluid.io.save_persistables(
+                exe, model_path, main_program=train_prog)
 
         iter_no += 1
 
@@ -394,6 +483,7 @@ def initlogging():
         format=
         "%(levelname)s:%(filename)s[%(lineno)s] %(name)s:%(funcName)s->%(message)s",
         datefmt='%a, %d %b %Y %H:%M:%S')
+
 
 def main():
     initlogging()

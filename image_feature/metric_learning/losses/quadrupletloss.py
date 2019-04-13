@@ -29,10 +29,8 @@ class QuadrupletLoss():
     def loss(self, input, label=None):
         
         #特征层在计算距离前会被L2归一化。使用l2_normalize 应该和后面两句等价
-        #input = fluid.layers.l2_normalize(input, axis=1)
-        input_norm = fluid.layers.sqrt(fluid.layers.reduce_sum(fluid.layers.square(input), dim=1))
-        input = fluid.layers.elementwise_div(input, input_norm, axis=0)
-
+        input = fluid.layers.l2_normalize(input, axis=1)
+        
         samples_each_class = self.samples_each_class
         batch_size = self.cal_loss_batch_size
         margin = self.margin
@@ -46,8 +44,6 @@ class QuadrupletLoss():
         ignore.stop_gradient = True
         pos_max = fluid.layers.reduce_max(pos)
         neg_min = fluid.layers.reduce_min(neg)
-        #pos_max = fluid.layers.sqrt(pos_max + 1e-6)
-        #neg_min = fluid.layers.sqrt(neg_min + 1e-6)
         
         #计算损失
         loss = fluid.layers.relu(pos_max - neg_min + margin)

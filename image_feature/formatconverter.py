@@ -16,7 +16,6 @@ from cifar_reader import loadcifar10
 #label为文本文件 key+tab+labeltext (分类格式)， metriclearning key1 \t key2 .. label
 #cifar-10-python.tar.gz
 
-
 class DataSetWriter(object):
     def __init__(self, prefix):
         self.datafile = open(prefix + '.data', 'wb')
@@ -52,7 +51,7 @@ def test_convert_cifar(filename, subname, outputprefix):
         writer.addlabel(key + '\t' + str(label))
 
 
-#
+#人脸识别训练数据的格式转换
 def test_convert_facems1m_train(datafolder, outputprefix):
     DATA_DIM = 112
     TRAIN_LIST = os.path.join(datafolder, 'label.txt')
@@ -84,7 +83,7 @@ def load_bin(path, image_size):
         img2 = datatostring(bins[i * 2 + 1])
         yield i, img1, img2, issame_list[i]
 
-
+#人脸识别评估集合转换
 #python formatconverter.py test_convert_face_test MS1M face_test
 def test_convert_face_test(datafolder, outputprefix):
     writer = DataSetWriter(outputprefix)
@@ -147,7 +146,7 @@ def convert_patchfolder(datafolder, writer, idstart, labelstart):
     maxlabel = labelstart + label + 1
     return idstart + offset, maxlabel
 
-
+#patch 匹配集合的转换
 def test_convert_patchfolders(outputprefix, *folders):
     writer = DataSetWriter(outputprefix)
     idstart, labelstart = 0, 0
