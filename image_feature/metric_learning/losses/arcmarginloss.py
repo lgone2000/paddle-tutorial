@@ -33,7 +33,7 @@ class ArcMarginLoss():
         #m(marge)是为了促进同一类样本更好的聚合，并扩大类别间的距离。 
         # 增加marge，使得正样本 cos value更小，因此分类界面会向正样本方向进一步压缩
         
-        sine = fluid.layers.sqrt(1.0 - fluid.layers.square(cosine) + 1e-6)
+        sine = fluid.layers.sqrt(fluid.layers.relu(1.0 - fluid.layers.square(cosine)))
 
         cos_m = math.cos(m)
         sin_m = math.sin(m)
