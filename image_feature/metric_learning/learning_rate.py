@@ -43,30 +43,3 @@ def cosine_decay_v2_with_warmup(learning_rate, warmupsteps, totalsteps):
                      (ops.cos((global_step - warmupsteps) * (math.pi / (totalsteps))) + 1)/2
                 fluid.layers.tensor.assign(input=decayed_lr, output=lr)
     return lr
-
-
-def optimizer_setting(params, args):
-    ls = params["learning_strategy"]
-    assert ls["name"] in [
-        "piecewise_decay", "cosine_decay", "cosine_decay_with_warmup"
-    ]
-    base_lr = params["lr"]
-
-    if ls['name'] == "piecewise_decay":
-        bd = [int(e) for e in ls["lr_steps"].split(',')]
-        lr = [base_lr * (0.1**i) for i in range(len(bd) + 1)]
-        lrs = fluid.layers.piecewise_decay(boundaries=bd, values=lr)
-    elif ls['name'] == "cosine_decay":
-        lrs = cosine_decay_v2(base_lr, args.total_iter_num)
-    elif ls['name'] == "cosine_decay_with_warmup":
-        lrs = cosine_decay_v2_with_warmup(base_lr, args.warmup_iter_num,
-                                          args.total_iter_num)
-
-    #相对于SGD ，使用Momentum 加快收敛速度而不影响收敛效果。如果用Adam，或者RMScrop收敛可以更快，但在imagenet上收敛有损失
-    optimizer = fluid.optimizer.Momentum(
-        learning_rate=lrs,
-        momentum=0.9,
-        regularization=fluid.regularizer.L2Decay(1e-4))
-    return optimizer
-
-

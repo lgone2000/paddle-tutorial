@@ -21,7 +21,8 @@ from losses import SoftmaxLoss
 from losses import ArcMarginLoss
 from utility import add_arguments, print_arguments
 from utility import fmt_time, recall_topk, get_gpu_num, get_cpu_num
-from learning_rate import *
+from learning_rate import cosine_decay_v2, cosine_decay_v2_with_warmup
+from fluidpreprocess import preprocessimg
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
 # yapf: disable
@@ -66,6 +67,7 @@ model_list = [m for m in dir(models) if "__" not in m]
 #epochnum:训练轮数 目前统一到200， 会比90 高1%， finetune可以降低到10~20 epoch
 #Momentum优化器文档  http://paddlepaddle.org/documentation/docs/zh/1.3/api_cn/optimizer_cn.html#permalink-15-momentum
 
+
 def optimizer_setting(params, args):
     ls = params["learning_strategy"]
     assert ls["name"] in [
@@ -90,33 +92,12 @@ def optimizer_setting(params, args):
         regularization=fluid.regularizer.L2Decay(1e-4))
     return optimizer
 
-#在网络里面减均值除方差
-def preprocessimg(image):
-    data_ori = fluid.layers.cast(x=image, dtype='float32')
-    mean_values_numpy = np.array(reader.img_mean, np.float32).reshape(
-        -1, 1, 1).astype(np.float32)
-    mean_values = fluid.layers.create_tensor(dtype="float32")
-    fluid.layers.assign(input=mean_values_numpy, output=mean_values)
-    mean_values.stop_gradient = True
-
-    std_values_numpy = np.array(reader.img_std, np.float32).reshape(
-        -1, 1, 1).astype(np.float32)
-    std_values = fluid.layers.create_tensor(dtype="float32")
-    fluid.layers.assign(input=std_values_numpy, output=std_values)
-    std_values.stop_gradient = True
-
-    datasubmean = fluid.layers.elementwise_sub(data_ori, mean_values)
-    datasubmean.stop_gradient = True
-    inputdata = fluid.layers.elementwise_div(datasubmean, std_values)
-    inputdata.stop_gradient = True
-    return inputdata
-
 
 def createmodel(image, model, args):
-    
+
     if args.input_dtype == 'uint8':
         assert (str(image.dtype) == 'VarType.UINT8')
-        inputdata = preprocessimg(image)
+        inputdata = preprocessimg(image, reader.img_mean, reader.img_std)
     else:
         inputdata = image
 
@@ -125,7 +106,7 @@ def createmodel(image, model, args):
 
 
 def net_config_test(image, label, model, args):
-    out = createmodel(image,model, args)
+    out = createmodel(image, model, args)
     return out, image, label
 
 
@@ -195,7 +176,7 @@ def build_program(is_train, net_config, main_prog, startup_prog, args):
                 dtypes=[args.input_dtype, "int64"],
                 use_double_buffer=True)
             image, label = fluid.layers.read_file(py_reader)
-            
+
         else:
             py_reader = None
             image = fluid.layers.data(
@@ -221,7 +202,7 @@ def build_program(is_train, net_config, main_prog, startup_prog, args):
     if not is_train:
         main_prog = main_prog.clone(for_test=True)
     """
-    return py_reader, outputvars 
+    return py_reader, outputvars
 
 
 class EvalTrain_Classify(object):
@@ -314,12 +295,12 @@ def train_async(args):
 
     trainclassify = args.loss_name in ["softmax", "arcmargin"]
     train_py_reader, outputvars = build_program(
-            is_train=True,
-            net_config = net_config_classify,
-            main_prog=train_prog,
-            startup_prog=startup_prog,
-            args=args)
-    
+        is_train=True,
+        net_config=net_config_classify,
+        main_prog=train_prog,
+        startup_prog=startup_prog,
+        args=args)
+
     if trainclassify:
         train_cost, train_acc1, train_acc5, global_lr = outputvars
         train_fetch_list = [
@@ -334,9 +315,9 @@ def train_async(args):
         ]
         evaltrain = EvalTrain_Metric()
 
-    _, outputvars= build_program(
+    _, outputvars = build_program(
         is_train=False,
-        net_config = net_config_test,
+        net_config=net_config_test,
         main_prog=tmp_prog,
         startup_prog=startup_prog,
         args=args)
@@ -427,7 +408,8 @@ def train_async(args):
 
         totalruntime += period
 
-        if iter_no % args.test_iter_step == 0 and (pretrained_model or checkpoint or iter_no != 0):
+        if iter_no % args.test_iter_step == 0 and (pretrained_model or
+                                                   checkpoint or iter_no != 0):
             #保持多个batch的feature 和 label 分别到 f, l
             evaltest = EvalTest()
             max_test_count = 100
@@ -437,9 +419,9 @@ def train_async(args):
                     test_prog,
                     fetch_list=test_fetch_list,
                     feed=test_feeder.feed(data))
-                
+
                 label = np.asarray([x[1] for x in data])
-        
+
                 evaltest.pushdata((test_outputlist[0], label))
                 t2 = time.time()
                 period = t2 - t1
