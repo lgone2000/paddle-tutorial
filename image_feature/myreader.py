@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+       
 import numpy as np
 import cv2
 import os
@@ -177,6 +178,7 @@ def create_multiprocessreader(reader_createor, threadnum):
         #start subprocess for read
         writer_p = mp.Process(
             target=subprocess_reader, args=(pipe,args, argk))
+        writer_p.daemon = True
         writer_p.start()
         input_p.close()
         while True:
