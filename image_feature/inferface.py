@@ -9,6 +9,7 @@ import paddle.fluid as fluid
 import resnet18
 from fluidpreprocess import preprocessimg
 
+
 #python inferface.py test_convertsnap2inference facepretrainmodel/36000/ faceinference
 def test_convertsnap2inference(loadmodel, outputfolder,
                                inputshape='3,112,112'):

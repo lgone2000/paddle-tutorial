@@ -57,9 +57,18 @@ add_arg('margin', float, 0.1, "margin.")
 add_arg('npairs_reg_lambda', float, 0.01, "npairs reg lambda.")
 
 add_arg('enable_ce', bool, False, "If set True, enable continuous evaluation job.")
+
+add_arg('train_datasetfile', str, "", "train data set file")
+add_arg('train_labelfile', str, "", "train data set file")
+add_arg('val_datasetfile', str, "", "validation data set file")
+add_arg('val_labelfile', str, "", "validation data set file")
+
+
 # yapf: enable
 
 model_list = [m for m in dir(models) if "__" not in m]
+
+debugfixrandomflag = False
 
 #optimizer:分类优化器，一般选择Momentum(momentum=0.9)优化器， 学习率一般采用分段下降的调整（每次调整到原来1/10)，或者cosine 下降调整策略，
 #learning-rate:基础学习率 如果从随机初始化训练开始，设置为0.1，如果finetune则会降低到0.01~0.001（前面加上warm-up)
@@ -168,13 +177,17 @@ def build_program(is_train, net_config, main_prog, startup_prog, args):
     #在 指定的main_prog 和start_prog 下组网（而不是用缺省的那个）
     with fluid.program_guard(main_prog, startup_prog):
         if is_train:
+
+            #调试时如果需要固定输入随机顺序，需要doublebuf设置为False
+            doublebuf = True if not debugfixrandomflag else False
+
             queue_capacity = 64
             py_reader = fluid.layers.py_reader(
                 capacity=queue_capacity,
                 shapes=[[-1] + image_shape, [-1, 1]],
                 lod_levels=[0, 0],
                 dtypes=[args.input_dtype, "int64"],
-                use_double_buffer=True)
+                use_double_buffer=doublebuf)
             image, label = fluid.layers.read_file(py_reader)
 
         else:
@@ -273,8 +286,13 @@ class EvalTest(object):
 
 def train_async(args):
     # parameters from arguments
-
     logging.debug('enter train')
+
+    assert (os.path.exists(args.train_datasetfile))
+    assert (os.path.exists(args.train_labelfile))
+    assert (os.path.exists(args.val_datasetfile))
+    assert (os.path.exists(args.val_labelfile))
+
     model_name = args.model
     checkpoint = args.checkpoint
     pretrained_model = args.pretrained_model
@@ -288,10 +306,12 @@ def train_async(args):
     if args.enable_ce:
         assert args.model == "ResNet50"
         assert args.loss_name == "arcmargin"
+        random.seed(0)
         np.random.seed(0)
         startup_prog.random_seed = 1000
         train_prog.random_seed = 1000
         tmp_prog.random_seed = 1000
+        debugfixrandomflag = True
 
     trainclassify = args.loss_name in ["softmax", "arcmargin"]
     train_py_reader, outputvars = build_program(
@@ -335,7 +355,6 @@ def train_async(args):
 
     #初始化变量
     exe.run(startup_prog)
-
     logging.debug('after run startup program')
 
     #从断点中恢复
@@ -372,6 +391,7 @@ def train_async(args):
     test_reader = paddle.batch(
         reader.test(args), batch_size=test_batch_size, drop_last=False)
     test_feeder = fluid.DataFeeder(place=place, feed_list=[image, label])
+
     train_py_reader.decorate_paddle_reader(train_reader)
 
     #使用ParallelExecutor 实现多卡训练
@@ -385,29 +405,7 @@ def train_async(args):
     train_py_reader.start()
     iter_no = 0
     while iter_no <= args.total_iter_num:
-        t1 = time.time()
-        #注意对于pyreader异步读取，不需要传入feed 参数了
-        outputlist = train_exe.run(fetch_list=train_fetch_list)
-        t2 = time.time()
-        period = t2 - t1
-
-        evaltrain.pushdata(outputlist)
-
-        #计算多个batch的平均准确率
-        if iter_no % args.display_iter_step == 0:
-            avgruntime = totalruntime / args.display_iter_step
-            train_accuracy = evaltrain.getaccuracy()
-
-            print("[%s] trainbatch %d, "\
-                    "accuracy[%s], time %2.2f sec" % \
-                    (fmt_time(), iter_no, train_accuracy, avgruntime))
-            sys.stdout.flush()
-            totalruntime = 0
-        if iter_no % 1000 == 0:
-            evaltrain.reset()
-
-        totalruntime += period
-
+        #first test
         if iter_no % args.test_iter_step == 0 and (pretrained_model or
                                                    checkpoint or iter_no != 0):
             #保持多个batch的feature 和 label 分别到 f, l
@@ -444,6 +442,29 @@ def train_async(args):
             #保存模型， 可用于训练断点恢复
             fluid.io.save_persistables(
                 exe, model_path, main_program=train_prog)
+
+        t1 = time.time()
+        #注意对于pyreader异步读取，不需要传入feed 参数了
+        outputlist = train_exe.run(fetch_list=train_fetch_list)
+        t2 = time.time()
+        period = t2 - t1
+
+        evaltrain.pushdata(outputlist)
+
+        #计算多个batch的平均准确率
+        if iter_no % args.display_iter_step == 0:
+            avgruntime = totalruntime / args.display_iter_step
+            train_accuracy = evaltrain.getaccuracy()
+
+            print("[%s] trainbatch %d, "\
+                    "accuracy[%s], time %2.2f sec" % \
+                    (fmt_time(), iter_no, train_accuracy, avgruntime))
+            sys.stdout.flush()
+            totalruntime = 0
+        if iter_no % 1000 == 0:
+            evaltrain.reset()
+
+        totalruntime += period
 
         iter_no += 1
 

@@ -75,6 +75,7 @@ class Models(object):
         for modelname in modelinfo:
             setattr(self, modelname, modelinfo[modelname])
 
+
 trainmodule.models = Models({
     'L2Net': l2net.L2Net,
     'ResNet18': resnet18.ResNet18
@@ -95,7 +96,6 @@ def trainmain():
         "--class_dim=10000",
         "--image_shape=1,32,32",
         "--lr=0.1",
-
         "--lr_strategy=cosine_decay_with_warmup",
         "--warmup_iter_num=6000",
         "--display_iter_step=5",

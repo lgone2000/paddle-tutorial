@@ -24,6 +24,23 @@ def test_reader(readnum):
             break
 
 
+class ResNet():
+    def __init__(self):
+        pass
+
+    def net(self, input, embedding_size=256):
+        conv = fluid.layers.conv2d(
+            name='conv',
+            input=input,
+            num_filters=2,
+            filter_size=3,
+            stride=2,
+            padding=1,
+            groups=1,
+            act='relu')
+        output = fluid.layers.fc(input=conv, size=classnum)
+
+
 #1.3 构建一个简单的分类网络 input->conv->relu->fc
 def classifynetwork():
     classnum = 10

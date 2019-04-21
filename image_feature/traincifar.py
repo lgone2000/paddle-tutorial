@@ -13,17 +13,14 @@ import resnet18
 
 #替换老的reader
 
-train_datasetfile = 'dataset/cifar10/cifar10_train.data'
-train_labelfile = 'dataset/cifar10/cifar10_train.label'
-
-val_datasetfile = 'dataset/cifar10/cifar10_test.data'
-val_labelfile = 'dataset/cifar10/cifar10_test.label'
-
 
 def train(args):
     def train_reader():
-        traindataset = myreader.myreader_classify_multiprocess(
-            train_datasetfile, train_labelfile, 'train')
+        #readerfunc = myreader.myreader_classify
+        readerfunc = myreader.create_multiprocessreader(
+            myreader.myreader_classify, 4)
+        traindataset = readerfunc(args.train_datasetfile, args.train_labelfile,
+                                  'train')
         for image, label in traindataset:
             yield image, label
 
@@ -32,8 +29,8 @@ def train(args):
 
 def val(args):
     def val_reader():
-        traindataset = myreader.myreader_classify(val_datasetfile,
-                                                  val_labelfile, 'val')
+        traindataset = myreader.myreader_classify(args.val_datasetfile,
+                                                  args.val_labelfile, 'val')
         for image, label in traindataset:
             yield image, label
 
@@ -70,10 +67,10 @@ trainmodule.model_list = ['ResNet18']
 def trainmain():
     sys.argv = [
         'train.py',
-        "--use_gpu=false",
+        "--use_gpu=true",
         "--input_dtype=uint8",
         "--model=ResNet18",
-        "--train_batch_size=128",
+        "--train_batch_size=512",
         "--test_batch_size=64",
         "--embedding_size=256",
         "--class_dim=10",
@@ -83,12 +80,16 @@ def trainmain():
         "--lr_steps=6000,12000,18000",
         #"--lr_epoch=30, 60, 90",
         #"--l2_decay=5e-4",
-        "--display_iter_step=100",
+        "--display_iter_step=10",
         "--total_iter_num=20000",
         "--test_iter_step=500",
         "--save_iter_step=2000",
         "--loss_name=softmax",
         #"--pretrained_model=cifar_pretrained"
+        "--train_datasetfile=dataset/cifar10/cifar10_train.data",
+        "--train_labelfile=dataset/cifar10/cifar10_train.label",
+        "--val_datasetfile=dataset/cifar10/cifar10_test.data",
+        "--val_labelfile=dataset/cifar10/cifar10_test.label",
     ]
     trainmodule.main()
 

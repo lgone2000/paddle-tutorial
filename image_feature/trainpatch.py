@@ -13,14 +13,8 @@ import resnet18
 import l2net
 import numpy as np
 import cv2
+
 #替换老的reader
-
-train_datasetfile = 'dataset/samepatch_train/samepatch_train.data'
-train_labelfile = 'dataset/samepatch_train/samepatch_train_500000.label'
-#train_labelfile = 'dataset/samepatch_train/samepatch_train_10000.label'
-
-val_datasetfile = 'dataset/samepatch_train/samepatch_train.data'
-val_labelfile = 'dataset/samepatch_train/samepatch_test_44803.label'
 
 
 def preprocess(img, mode):
@@ -31,11 +25,12 @@ def preprocess(img, mode):
 def train(args):
     def train_reader():
         #readerfunc =  myreader.myreader_classify
-        readerfunc = myreader.create_multiprocessreader(myreader.myreader_classify, 4)
-        
+        readerfunc = myreader.create_multiprocessreader(
+            myreader.myreader_classify, 4)
+
         traindataset = readerfunc(
-            train_datasetfile,
-            train_labelfile,
+            args.train_datasetfile,
+            args.train_labelfile,
             'train',
             iscolor=0,
             preprocessfunc=preprocess)
@@ -48,8 +43,8 @@ def train(args):
 def val(args):
     def val_reader():
         traindataset = myreader.myreader_classify(
-            val_datasetfile,
-            val_labelfile,
+            args.val_datasetfile,
+            args.val_labelfile,
             'val',
             doshuffle=False,
             iscolor=0,
@@ -91,6 +86,7 @@ def trainmain():
         'train.py',
         #"--use_gpu=false",
         #"--checkpoint=output/L2Net/12000/",
+        "--pretrained_model=pretrained_model",
         "--input_dtype=uint8",
         #"--model=L2Net",
         "--model=ResNet18",
@@ -100,15 +96,20 @@ def trainmain():
         "--class_dim=500000",
         "--image_shape=1,32,32",
         "--lr=0.1",
-        "--lr_strategy=cosine_decay_with_warmup",
-        "--warmup_iter_num=6000",
+        "--lr_strategy=cosine_decay",
+        #"--lr_strategy=cosine_decay_with_warmup",
+        #"--warmup_iter_num=6000",
         "--display_iter_step=5",
-        "--total_iter_num=18000",
-        "--test_iter_step=500",
+        "--total_iter_num=60000",
+        "--test_iter_step=100",
         "--save_iter_step=3000",
         "--loss_name=arcmargin",
         "--arc_scale=64",
         "--arc_margin=0.5",
+        "--train_datasetfile=dataset/samepatch_train/samepatch_train.data",
+        "--train_labelfile=dataset/samepatch_train/samepatch_train_500000.label",
+        "--val_datasetfile=dataset/samepatch_train/samepatch_train.data",
+        "--val_labelfile=dataset/samepatch_train/samepatch_test_44803.label",
     ]
     trainmodule.main()
 
