@@ -15,6 +15,7 @@ import myreader
 import logging
 import resnet18
 from myreader import update_argv
+
 #替换老的reader
 
 
@@ -90,6 +91,7 @@ class Models(object):
 trainmodule.models = Models({'ResNet18': resnet18.ResNet18})
 trainmodule.model_list = ['ResNet18']
 
+
 def trainmain():
     bigargv = [
         'train.py',
@@ -118,7 +120,7 @@ def trainmain():
         "--val_datasetfile=dataset/face_ms1m/ms1m_train.data",
         "--val_labelfile=dataset/face_ms1m/ms1m_train_5164.label",
     ]
-    
+
     bigargvkaibin = [
         'train.py',
         "--model_save_dir=outputface",
@@ -178,7 +180,7 @@ def trainmain():
         #"--val_datasetfile=dataset/face_ms1m_small/test.data",
         #"--val_labelfile=dataset/face_ms1m_small/test.label",
     ]
-    
+
     update_argv(bigargvkaibin)
     #update_argv(bigargv)
     trainmodule.main()

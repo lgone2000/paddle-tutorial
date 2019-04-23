@@ -158,10 +158,14 @@ def main():
     ip = '0.0.0.0'
     port = '8000'
     datasets = [
-        ('cifar10train', './dataset/cifar10/cifar10_train.data', './dataset/cifar10/cifar10_train.label'),
-        ('facetrain', './dataset/face_ms1m_small/train.data', './dataset/face_ms1m_small/train.label'),
-        ('facetest', './dataset/face_ms1m_small/test.data', './dataset/face_ms1m_small/test.label'),
-        ('patchtrain', 'dataset/samepatch_train/samepatch_train.data', 'dataset/samepatch_train/samepatch_train_500000.label'),
+        ('cifar10train', './dataset/cifar10/cifar10_train.data',
+         './dataset/cifar10/cifar10_train.label'),
+        ('facetrain', './dataset/face_ms1m_small/train.data',
+         './dataset/face_ms1m_small/train.label'),
+        ('facetest', './dataset/face_ms1m_small/test.data',
+         './dataset/face_ms1m_small/test.label'),
+        ('patchtrain', 'dataset/samepatch_train/samepatch_train.data',
+         'dataset/samepatch_train/samepatch_train_500000.label'),
     ]
     global _feadb
     _feadb = Feadb(datasets)

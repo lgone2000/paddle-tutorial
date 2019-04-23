@@ -14,6 +14,7 @@ import l2net
 import numpy as np
 import cv2
 from myreader import update_argv
+
 #替换老的reader
 
 
@@ -111,7 +112,7 @@ def trainmain():
         "--val_datasetfile=dataset/samepatch_train/samepatch_train.data",
         "--val_labelfile=dataset/samepatch_train/samepatch_test_44803.label",
     ]
-    
+
     update_argv(defaultargv)
     trainmodule.main()
 

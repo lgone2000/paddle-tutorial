@@ -262,4 +262,4 @@ def update_argv(defaultargv):
             defaultargv.append(arg)
             print('add new args', arg, file=sys.stderr)
 
-    sys.argv = defaultargv            
+    sys.argv = defaultargv

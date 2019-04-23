@@ -35,7 +35,6 @@ class ResNet():
             depth = [2, 2, 2, 2]
         num_filters = [64, 128, 256, 512]
 
-        
         conv = self.conv_bn_layer(
             input=input,
             num_filters=64,
@@ -68,15 +67,12 @@ class ResNet():
 
         stdv = 1.0 / math.sqrt(pool.shape[1] * 1.0)
         param_attr = fluid.param_attr.ParamAttr(
-                initializer=fluid.initializer.Uniform(-stdv, stdv))
-        
+            initializer=fluid.initializer.Uniform(-stdv, stdv))
+
         #param_attr=fluid.param_attr.ParamAttr(initializer=fluid.initializer.Xavier())
-        
+
         embedding = fluid.layers.fc(
-            input=pool,
-            size=embedding_size,
-            act=None,
-            param_attr=param_attr)
+            input=pool, size=embedding_size, act=None, param_attr=param_attr)
 
         return embedding
 
