@@ -14,7 +14,7 @@ import train_elem as trainmodule
 import myreader
 import logging
 import resnet18
-
+from myreader import update_argv
 #替换老的reader
 
 
@@ -90,7 +90,6 @@ class Models(object):
 trainmodule.models = Models({'ResNet18': resnet18.ResNet18})
 trainmodule.model_list = ['ResNet18']
 
-
 def trainmain():
     bigargv = [
         'train.py',
@@ -152,24 +151,9 @@ def trainmain():
         #"--val_datasetfile=dataset/face_ms1m_small/test.data",
         #"--val_labelfile=dataset/face_ms1m_small/test.label",
     ]
-    #defaultargv = smallargv
-    defaultargv = bigargv
-    sysargv = sys.argv
-    for arg in sysargv[1:]:
-        paramname = arg.split('=')[0].strip()
-        for i, defaultarg in enumerate(defaultargv):
-            if defaultarg.startswith(paramname + '='):
-                defaultargv[i] = arg
-                print(
-                    'replace arg %s with %s' % (defaultarg, arg),
-                    file=sys.stderr)
-                break
-        #not find , append it to defaultargv
-        else:
-            defaultargv.append(arg)
-            print('add new args', arg, file=sys.stderr)
-
-    sys.argv = defaultargv
+    
+    update_argv(smallargv)
+    #update_argv(bigargv)
     trainmodule.main()
 
 

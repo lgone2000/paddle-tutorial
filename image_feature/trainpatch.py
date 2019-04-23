@@ -13,7 +13,7 @@ import resnet18
 import l2net
 import numpy as np
 import cv2
-
+from myreader import update_argv
 #替换老的reader
 
 
@@ -82,11 +82,11 @@ trainmodule.model_list = ['L2Net', 'ResNet18']
 
 
 def trainmain():
-    sys.argv = [
+    defaultargv = [
         'train.py',
         #"--use_gpu=false",
         #"--checkpoint=output/L2Net/12000/",
-        "--pretrained_model=pretrained_model",
+        #"--pretrained_model=pretrained_model",
         "--input_dtype=uint8",
         #"--model=L2Net",
         "--model=ResNet18",
@@ -104,13 +104,15 @@ def trainmain():
         "--test_iter_step=100",
         "--save_iter_step=3000",
         "--loss_name=arcmargin",
-        "--arc_scale=64",
-        "--arc_margin=0.5",
+        "--arc_scale=80",
+        "--arc_margin=0.2",
         "--train_datasetfile=dataset/samepatch_train/samepatch_train.data",
         "--train_labelfile=dataset/samepatch_train/samepatch_train_500000.label",
         "--val_datasetfile=dataset/samepatch_train/samepatch_train.data",
         "--val_labelfile=dataset/samepatch_train/samepatch_test_44803.label",
     ]
+    
+    update_argv(defaultargv)
     trainmodule.main()
 
 

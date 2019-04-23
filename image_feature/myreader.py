@@ -244,3 +244,22 @@ def test_sample_label(labelfile, sampleperlabel):
         datas = dd[:sampleperlabel]
         for key, label in datas:
             print(key + '\t' + str(label))
+
+
+def update_argv(defaultargv):
+    sysargv = sys.argv
+    for arg in sysargv[1:]:
+        paramname = arg.split('=')[0].strip()
+        for i, defaultarg in enumerate(defaultargv):
+            if defaultarg.startswith(paramname + '='):
+                defaultargv[i] = arg
+                print(
+                    'replace arg %s with %s' % (defaultarg, arg),
+                    file=sys.stderr)
+                break
+        #not find , append it to defaultargv
+        else:
+            defaultargv.append(arg)
+            print('add new args', arg, file=sys.stderr)
+
+    sys.argv = defaultargv            

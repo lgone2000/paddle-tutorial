@@ -1,3 +1,7 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import sys
 import os
 import numpy as np
@@ -17,6 +21,7 @@ from myreader import ImageData
 
 
 def readlabels(labelfile):
+    print('begin to read label ', labelfile)
     alllabels = []
     isclassifylabel = True
     for line in open(labelfile, 'rb'):
@@ -34,16 +39,17 @@ def readlabels(labelfile):
             labeldict[label].append(cols[0])
         else:
             labeldict[label].append(cols[:-1])
-        labelkeys = sorted(labeldict.keys())
+    labelkeys = sorted(labeldict.keys())
+    print('finish reading label ', labelfile)
     return isclassifylabel, labeldict, labelkeys
 
 
 class Feadb(object):
     def __init__(self, datasets):
         self.datasets = {}
-        for datasetname, datasetprefix in datasets:
-            imagedata = ImageData(datasetprefix + '.data')
-            labeldata = readlabels(datasetprefix + '.label')
+        for datasetname, datasetdata, datasetlabel in datasets:
+            imagedata = ImageData(datasetdata)
+            labeldata = readlabels(datasetlabel)
             self.datasets[datasetname] = (imagedata, labeldata)
 
     def getimage(self, datsetname, key):
@@ -152,9 +158,10 @@ def main():
     ip = '0.0.0.0'
     port = '8000'
     datasets = [
-        ('cifar10train', './dataset/cifar10/cifar10_train'),
-        ('facetrain', './dataset/face_ms1m_small/train'),
-        ('facetest', './dataset/face_ms1m_small/test'),
+        ('cifar10train', './dataset/cifar10/cifar10_train.data', './dataset/cifar10/cifar10_train.label'),
+        ('facetrain', './dataset/face_ms1m_small/train.data', './dataset/face_ms1m_small/train.label'),
+        ('facetest', './dataset/face_ms1m_small/test.data', './dataset/face_ms1m_small/test.label'),
+        ('patchtrain', 'dataset/samepatch_train/samepatch_train.data', 'dataset/samepatch_train/samepatch_train_500000.label'),
     ]
     global _feadb
     _feadb = Feadb(datasets)
