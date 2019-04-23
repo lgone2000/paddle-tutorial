@@ -273,6 +273,17 @@ def preparefc():
     #newfcvalue = np.load('oldfc.npy')
     w.set(newfcvalue, place)
 
+def testsavevars():
+    #print fluid.default_main_program()
+    #     if pretrained_model:
+    #         def if_exist(var):
+    #             return os.path.exists(os.path.join(pretrained_model, var.name))
+    #         fluid.io.load_vars(
+    #             exe, pretrained_model, main_program=train_prog, predicate=if_exist)
+
+    #fluid.io.save_vars(executor=exe, dirname=outputfolder, main_program=fluid.default_main_program(),
+    #               vars=None)
+    pass
 
 if __name__ == '__main__':
     import sys

@@ -10,7 +10,8 @@ export FLAGS_fraction_of_gpu_memory_to_use=0.2
 #env CUDA_VISIBLE_DEVICES=0,1,2,3 python traincifar.py
 export  CUDA_VISIBLE_DEVICES=0,1,2,3 
 
-#python trainface.py --loss_name=softmax --model_save_dir=outputfacesoftmax 
+#python trainpatch.py
+
+#python trainpatch.py --loss_name=softmax --model_save_dir=outputpatchsoftmax --total_iter_num=30000
 #echo "!!!!!!!!!!!!!!!!!!!!===================="
-#python trainface.py --pretrained_model=outputfacesoftmax/ResNet18/36000
-python trainface.py  --model_save_dir=outputface
+python trainpatch.py --pretrained_model=outputpatchsoftmax/ResNet18/30000 --total_iter_num=30000

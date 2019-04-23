@@ -36,6 +36,7 @@ add_arg('class_dim', int, 11318 , "Class number.")
 add_arg('lr', float, 0.01, "set learning rate.")
 add_arg('lr_strategy', str, "piecewise_decay", "Set the learning rate decay strategy.")
 add_arg('lr_steps', str, "15000,25000", "step of lr")
+add_arg('lr_steps_values', str, "1,0.1", "lr values for each step")
 
 add_arg('warmup_iter_num', int, 0, "warmup_iter_num")
 add_arg('total_iter_num', int, 30000, "total_iter_num")
@@ -86,7 +87,10 @@ def optimizer_setting(params, args):
 
     if ls['name'] == "piecewise_decay":
         bd = [int(e) for e in ls["lr_steps"].split(',')]
-        lr = [base_lr * (0.1**i) for i in range(len(bd) + 1)]
+        if 'lr_steps_values' in ls:
+            lr = [base_lr * float(e) for e in ls["lr_steps_values"].split(',')]
+        else:
+            lr = [base_lr * (0.1**i) for i in range(len(bd) + 1)]
         lrs = fluid.layers.piecewise_decay(boundaries=bd, values=lr)
     elif ls['name'] == "cosine_decay":
         lrs = cosine_decay_v2(base_lr, args.total_iter_num)
@@ -205,6 +209,8 @@ def build_program(is_train, net_config, main_prog, startup_prog, args):
                 params = model.params
                 params["lr"] = args.lr
                 params["learning_strategy"]["lr_steps"] = args.lr_steps
+                if args.lr_steps_values:
+                    params["learning_strategy"]["lr_steps_values"] = args.lr_steps_values
                 params["learning_strategy"]["name"] = args.lr_strategy
                 #根据配置创建优化器
                 optimizer = optimizer_setting(params, args)

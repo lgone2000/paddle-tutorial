@@ -118,6 +118,33 @@ def trainmain():
         "--val_datasetfile=dataset/face_ms1m/ms1m_train.data",
         "--val_labelfile=dataset/face_ms1m/ms1m_train_5164.label",
     ]
+    
+    bigargvkaibin = [
+        'train.py',
+        "--model_save_dir=outputface",
+        "--input_dtype=uint8",
+        "--model=ResNet18",
+        "--train_batch_size=512",
+        "--test_batch_size=64",
+        "--embedding_size=512",
+        "--class_dim=85164",
+        "--image_shape=3,112,112",
+        "--lr=0.1",
+        "--lr_strategy=piecewise_decay",
+        "--lr_steps=1000,2000,3000,4000,100000,140000,160000, 200000",
+        "--lr_steps_values=0.01,0.05,0.1,0.5,1,0.1,0.01,0.001,0.0001",
+        "--display_iter_step=10",
+        "--total_iter_num=200000",
+        "--test_iter_step=500",
+        "--save_iter_step=5000",
+        "--loss_name=arcmargin",
+        "--arc_scale=64",
+        "--arc_margin=0.3",
+        "--train_datasetfile=dataset/face_ms1m/ms1m_train.data",
+        "--train_labelfile=dataset/face_ms1m/ms1m_train.label",
+        "--val_datasetfile=dataset/face_ms1m/ms1m_train.data",
+        "--val_labelfile=dataset/face_ms1m/ms1m_train_5164.label",
+    ]
 
     smallargv = [
         'train.py',
@@ -152,7 +179,7 @@ def trainmain():
         #"--val_labelfile=dataset/face_ms1m_small/test.label",
     ]
     
-    update_argv(smallargv)
+    update_argv(bigargvkaibin)
     #update_argv(bigargv)
     trainmodule.main()
 
